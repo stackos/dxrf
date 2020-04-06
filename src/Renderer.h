@@ -41,5 +41,5 @@ private:
     // Raytracing output
     ComPtr<ID3D12Resource> m_raytracing_output;
     D3D12_GPU_DESCRIPTOR_HANDLE m_raytracing_output_descriptor;
-    UINT m_raytracing_output_descriptor_index;
+    UINT m_raytracing_output_descriptor_index = UINT_MAX;
 };

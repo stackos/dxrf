@@ -159,16 +159,16 @@ void Renderer::CopyRaytracingOutputToBackbuffer()
     auto cmd = m_device->GetCommandList();
     auto rt = m_device->GetRenderTarget();
 
-    D3D12_RESOURCE_BARRIER preCopyBarriers[2];
-    preCopyBarriers[0] = CD3DX12_RESOURCE_BARRIER::Transition(rt, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_DEST);
-    preCopyBarriers[1] = CD3DX12_RESOURCE_BARRIER::Transition(m_raytracing_output.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
-    cmd->ResourceBarrier(ARRAYSIZE(preCopyBarriers), preCopyBarriers);
+    D3D12_RESOURCE_BARRIER pre_copy_barriers[2];
+    pre_copy_barriers[0] = CD3DX12_RESOURCE_BARRIER::Transition(rt, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_DEST);
+    pre_copy_barriers[1] = CD3DX12_RESOURCE_BARRIER::Transition(m_raytracing_output.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    cmd->ResourceBarrier(ARRAYSIZE(pre_copy_barriers), pre_copy_barriers);
 
     cmd->CopyResource(rt, m_raytracing_output.Get());
 
-    D3D12_RESOURCE_BARRIER postCopyBarriers[2];
-    postCopyBarriers[0] = CD3DX12_RESOURCE_BARRIER::Transition(rt, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
-    postCopyBarriers[1] = CD3DX12_RESOURCE_BARRIER::Transition(m_raytracing_output.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    D3D12_RESOURCE_BARRIER post_copy_barriers[2];
+    post_copy_barriers[0] = CD3DX12_RESOURCE_BARRIER::Transition(rt, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
+    post_copy_barriers[1] = CD3DX12_RESOURCE_BARRIER::Transition(m_raytracing_output.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-    cmd->ResourceBarrier(ARRAYSIZE(postCopyBarriers), postCopyBarriers);
+    cmd->ResourceBarrier(ARRAYSIZE(post_copy_barriers), post_copy_barriers);
 }
