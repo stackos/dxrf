@@ -8,67 +8,32 @@
 #include <math.h>
 #include <assert.h>
 
-#include "DeviceResources.h"
-
-using namespace DX;
+#include "Renderer.h"
 
 static bool g_minimized = false;
 static int g_width = 0;
 static int g_height = 0;
 static DWORD g_time = 0;
 static int g_frame_count = 0;
-std::unique_ptr<DeviceResources> g_device;
-
-class DeviceNotify : public DX::IDeviceNotify
-{
-    virtual void OnDeviceLost() override
-    {
-    
-    }
-
-    virtual void OnDeviceRestored() override
-    {
-        
-    }
-};
-DeviceNotify g_device_notify;
+Renderer* g_renderer = nullptr;
 
 static void Init(HWND hwnd, int width, int height)
 {
     g_width = width;
     g_height = height;
 
-    g_device = std::make_unique<DeviceResources>(
-        DXGI_FORMAT_R8G8B8A8_UNORM,
-        DXGI_FORMAT_UNKNOWN,
-        3,
-        D3D_FEATURE_LEVEL_11_0,
-        // Sample shows handling of use cases with tearing support, which is OS dependent and has been supported since TH2.
-        // Since the sample requires build 1809 (RS5) or higher, we don't need to handle non-tearing cases.
-        DeviceResources::c_RequireTearingSupport,
-        UINT_MAX);
-    g_device->RegisterDeviceNotify(&g_device_notify);
-    g_device->SetWindow(hwnd, width, height);
-    g_device->InitializeDXGIAdapter();
-
-    ThrowIfFalse(IsDirectXRaytracingSupported(g_device->GetAdapter()),
-        "ERROR: DirectX Raytracing is not supported by your OS, GPU and/or driver.\n\n");
-
-    g_device->CreateDeviceResources();
-    g_device->CreateWindowSizeDependentResources();
+    g_renderer = new Renderer(hwnd, width, height);
+    g_renderer->Init();
 }
 
 static void Done()
 {
-    g_device.reset();
+    delete g_renderer;
 }
 
 static void DrawFrame()
 {
-    if (!g_device->IsWindowVisible())
-    {
-        return;
-    }
+    g_renderer->Render();
 }
 
 static void OnSizeChanged(int width, int height, bool minimized)
@@ -77,10 +42,7 @@ static void OnSizeChanged(int width, int height, bool minimized)
     g_height = height;
     g_minimized = minimized;
 
-    if (!g_device->WindowSizeChanged(width, height, minimized))
-    {
-        return;
-    }
+    g_renderer->OnSizeChanged(width, height, minimized);
 }
 
 static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
