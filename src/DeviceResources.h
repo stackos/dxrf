@@ -227,4 +227,28 @@ namespace DX
             && SUCCEEDED(testDevice->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &featureSupportData, sizeof(featureSupportData)))
             && featureSupportData.RaytracingTier != D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
     }
+
+#if defined(_DEBUG) || defined(DBG)
+    inline void SetName(ID3D12Object* pObject, LPCWSTR name)
+    {
+        pObject->SetName(name);
+    }
+    inline void SetNameIndexed(ID3D12Object* pObject, LPCWSTR name, UINT index)
+    {
+        WCHAR fullName[50];
+        if (swprintf_s(fullName, L"%s[%u]", name, index) > 0)
+        {
+            pObject->SetName(fullName);
+        }
+    }
+#else
+    inline void SetName(ID3D12Object*, LPCWSTR)
+    {
+    }
+    inline void SetNameIndexed(ID3D12Object*, LPCWSTR, UINT)
+    {
+    }
+#endif
+    #define NAME_D3D12_OBJECT(x) SetName((x).Get(), L#x)
+    #define NAME_D3D12_OBJECT_INDEXED(x, n) SetNameIndexed((x)[n].Get(), L#x, n)
 }

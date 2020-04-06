@@ -12,7 +12,7 @@
 
 using namespace DX;
 
-static int g_minimized = 0;
+static bool g_minimized = false;
 static int g_width = 0;
 static int g_height = 0;
 static DWORD g_time = 0;
@@ -65,7 +65,22 @@ static void Done()
 
 static void DrawFrame()
 {
-    
+    if (!g_device->IsWindowVisible())
+    {
+        return;
+    }
+}
+
+static void OnSizeChanged(int width, int height, bool minimized)
+{
+    g_width = width;
+    g_height = height;
+    g_minimized = minimized;
+
+    if (!g_device->WindowSizeChanged(width, height, minimized))
+    {
+        return;
+    }
 }
 
 static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -73,25 +88,10 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     switch (uMsg)
     {
         case WM_SIZE:
-            if (wParam == SIZE_MINIMIZED)
             {
-                g_minimized = 1;
-            }
-            else
-            {
-                if (!g_minimized)
-                {
-                    int width = lParam & 0xffff;
-                    int height = (lParam & 0xffff0000) >> 16;
-
-                    if (g_width != width || g_height != height)
-                    {
-                        g_width = width;
-                        g_height = height;
-                    }
-                }
-
-                g_minimized = 0;
+                RECT rect = {};
+                GetClientRect(hWnd, &rect);
+                OnSizeChanged(rect.right - rect.left, rect.bottom - rect.top, wParam == SIZE_MINIMIZED);
             }
             break;
 
