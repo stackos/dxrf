@@ -28,11 +28,13 @@ static void Init(HWND hwnd, int width, int height)
 
 static void Done()
 {
+    g_renderer->Done();
     delete g_renderer;
 }
 
 static void DrawFrame()
 {
+    g_renderer->Update();
     g_renderer->Render();
 }
 
