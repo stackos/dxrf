@@ -22,6 +22,8 @@ StructuredBuffer<Vertex> Vertices : register(t2, space0);
 
 ConstantBuffer<SceneConstantBuffer> g_sceneCB : register(b0);
 ConstantBuffer<CubeConstantBuffer> g_cubeCB : register(b1);
+Texture2D<float4> g_texture : register(t3);
+SamplerState g_sampler : register(s0);
 
 // Load three 16 bit indices from a byte addressed buffer.
 uint3 Load3x16BitIndices(uint offsetBytes)
@@ -156,6 +158,8 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 
     float4 diffuseColor = CalculateDiffuseLighting(hitPosition, triangleNormal);
     float4 color = g_sceneCB.lightAmbientColor + diffuseColor;
+    color = g_cubeCB.albedo;
+    color = g_texture.SampleLevel(g_sampler, float2(0.0, 0.0), 0);
 
     payload.color = color;
 }

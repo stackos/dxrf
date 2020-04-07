@@ -46,6 +46,7 @@ private:
     void BuildAccelerationStructures();
     void CreateConstantBuffers();
     void BuildShaderTables();
+    void CreateTexture();
 
 private:
     static const int BACK_BUFFER_COUNT = 3;
@@ -104,4 +105,8 @@ private:
     ComPtr<ID3D12Resource> m_miss_table;
     ComPtr<ID3D12Resource> m_hit_group_table;
     ComPtr<ID3D12Resource> m_raygen_table;
+
+    ComPtr<ID3D12Resource> m_texture;
+    D3D12_GPU_DESCRIPTOR_HANDLE m_texture_srv;
+    UINT m_texture_srv_index = UINT_MAX;
 };
