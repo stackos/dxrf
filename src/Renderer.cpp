@@ -10,6 +10,7 @@ namespace GlobalRootSignatureParams
         AccelerationStructureSlot,
         SceneConstantSlot,
         VertexBuffersSlot,
+        TextureSlot,
         Count
     };
 }
@@ -18,8 +19,8 @@ namespace LocalRootSignatureParams
 {
     enum Value
     {
-        CubeConstantSlot = 0,
-        TextureSlot,
+        TextureSlot = 0,
+        CubeConstantSlot,
         Count
     };
 }
@@ -122,7 +123,7 @@ void Renderer::InitializeScene()
 
     // Setup materials.
     {
-        m_cube_cb.albedo = XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f);
+        m_cube_cb.albedo = XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f);
     }
 
     // Setup camera.
@@ -180,10 +181,10 @@ void Renderer::CreateDeviceDependentResources()
     this->CreateRaytracingInterfaces();
     this->CreateRaytracingPipelineStateObject();
     this->BuildGeometry();
+    this->CreateTexture();
     this->BuildAccelerationStructures();
     this->CreateConstantBuffers();
     this->BuildShaderTables();
-    this->CreateTexture();
 }
 
 void Renderer::CreateWindowSizeDependentResources()
@@ -305,6 +306,7 @@ void Renderer::DoRaytracing()
         // Set index and successive vertex buffer decriptor tables
         cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::VertexBuffersSlot, m_index_buffer.gpu_desc);
         cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::OutputViewSlot, m_raytracing_output_descriptor);
+        cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::TextureSlot, m_texture_srv);
     };
 
     cmd->SetComputeRootSignature(m_raytracing_global_sig.Get());
@@ -345,21 +347,7 @@ void Renderer::CreateRootSignatures()
     auto device = m_device->GetD3DDevice();
 
     {
-        CD3DX12_DESCRIPTOR_RANGE ranges[2]; // Perfomance TIP: Order from most frequent to least frequent.
-        ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);  // 1 output texture
-        ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 1);  // 2 static index and vertex buffers.
-
-        CD3DX12_ROOT_PARAMETER parameters[GlobalRootSignatureParams::Count];
-        parameters[GlobalRootSignatureParams::OutputViewSlot].InitAsDescriptorTable(1, &ranges[0]);
-        parameters[GlobalRootSignatureParams::AccelerationStructureSlot].InitAsShaderResourceView(0);
-        parameters[GlobalRootSignatureParams::SceneConstantSlot].InitAsConstantBufferView(0);
-        parameters[GlobalRootSignatureParams::VertexBuffersSlot].InitAsDescriptorTable(1, &ranges[1]);
-        CD3DX12_ROOT_SIGNATURE_DESC desc(ARRAYSIZE(parameters), parameters);
-        this->SerializeAndCreateRaytracingRootSignature(desc, &m_raytracing_global_sig);
-    }
-
-    {
-        D3D12_STATIC_SAMPLER_DESC sampler = { };
+        D3D12_STATIC_SAMPLER_DESC sampler = {};
         sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
         sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
         sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
@@ -373,13 +361,29 @@ void Renderer::CreateRootSignatures()
         sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
         sampler.ShaderRegister = 0;
 
+        CD3DX12_DESCRIPTOR_RANGE ranges[3]; // Perfomance TIP: Order from most frequent to least frequent.
+        ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);  // 1 output texture
+        ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 1);  // 2 static index and vertex buffers.
+        ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);  // 3 material texture
+
+        CD3DX12_ROOT_PARAMETER parameters[GlobalRootSignatureParams::Count];
+        parameters[GlobalRootSignatureParams::OutputViewSlot].InitAsDescriptorTable(1, &ranges[0]);
+        parameters[GlobalRootSignatureParams::AccelerationStructureSlot].InitAsShaderResourceView(0);
+        parameters[GlobalRootSignatureParams::SceneConstantSlot].InitAsConstantBufferView(0);
+        parameters[GlobalRootSignatureParams::VertexBuffersSlot].InitAsDescriptorTable(1, &ranges[1]);
+        parameters[GlobalRootSignatureParams::TextureSlot].InitAsDescriptorTable(1, &ranges[2]);
+        CD3DX12_ROOT_SIGNATURE_DESC desc(ARRAYSIZE(parameters), parameters, 1, &sampler);
+        this->SerializeAndCreateRaytracingRootSignature(desc, &m_raytracing_global_sig);
+    }
+
+    {
         CD3DX12_DESCRIPTOR_RANGE ranges[1];
-        ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3); // texture
+        ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4); // material texture
 
         CD3DX12_ROOT_PARAMETER parameters[LocalRootSignatureParams::Count];
-        parameters[LocalRootSignatureParams::CubeConstantSlot].InitAsConstants(SizeOfInUint32(m_cube_cb), 1);
         parameters[LocalRootSignatureParams::TextureSlot].InitAsDescriptorTable(1, &ranges[0]);
-        CD3DX12_ROOT_SIGNATURE_DESC desc(ARRAYSIZE(parameters), parameters, 1, &sampler);
+        parameters[LocalRootSignatureParams::CubeConstantSlot].InitAsConstants(SizeOfInUint32(m_cube_cb), 1);
+        CD3DX12_ROOT_SIGNATURE_DESC desc(ARRAYSIZE(parameters), parameters);
         desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
         this->SerializeAndCreateRaytracingRootSignature(desc, &m_raytracing_local_sig);
     }
@@ -544,6 +548,73 @@ UINT Renderer::CreateBufferSRV(D3DBuffer* buffer, UINT numElements, UINT element
     device->CreateShaderResourceView(buffer->resource.Get(), &desc, buffer->cpu_desc);
     buffer->gpu_desc = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptor_heap->GetGPUDescriptorHandleForHeapStart(), desc_index, m_descriptor_size);
     return desc_index;
+}
+
+void Renderer::CreateTexture()
+{
+    auto device = m_device->GetD3DDevice();
+    auto cmd = m_device->GetCommandList();
+
+    cmd->Reset(m_device->GetCommandAllocator(), nullptr);
+
+    // Describe and create a Texture2D.
+    D3D12_RESOURCE_DESC desc = { };
+    desc.MipLevels = 1;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.Width = 1;
+    desc.Height = 1;
+    desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    desc.DepthOrArraySize = 1;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+
+    ThrowIfFailed(device->CreateCommittedResource(
+        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_COPY_DEST,
+        nullptr,
+        IID_PPV_ARGS(&m_texture)));
+
+    const UINT64 upload_size = GetRequiredIntermediateSize(m_texture.Get(), 0, 1);
+
+    // Create the GPU upload buffer.
+    ComPtr<ID3D12Resource> upload_heap;
+    ThrowIfFailed(device->CreateCommittedResource(
+        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+        D3D12_HEAP_FLAG_NONE,
+        &CD3DX12_RESOURCE_DESC::Buffer(upload_size),
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&upload_heap)));
+
+    // Copy data to the intermediate upload heap and then schedule a copy 
+    // from the upload heap to the Texture2D.
+    UINT8 data[] = { 0xFF, 0x00, 0x00, 0x00 };
+
+    D3D12_SUBRESOURCE_DATA texture_data = { };
+    texture_data.pData = &data;
+    texture_data.RowPitch = 4;
+    texture_data.SlicePitch = texture_data.RowPitch * 1;
+
+    UpdateSubresources(cmd, m_texture.Get(), upload_heap.Get(), 0, 0, 1, &texture_data);
+    cmd->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_texture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ));
+
+    D3D12_CPU_DESCRIPTOR_HANDLE desc_handle;
+    m_texture_srv_index = this->AllocateDescriptor(&desc_handle);
+
+    // Describe and create a SRV for the texture.
+    D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = { };
+    srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srv_desc.Format = desc.Format;
+    srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srv_desc.Texture2D.MipLevels = 1;
+    device->CreateShaderResourceView(m_texture.Get(), nullptr, desc_handle);
+    m_texture_srv = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptor_heap->GetGPUDescriptorHandleForHeapStart(), m_texture_srv_index, m_descriptor_size);
+
+    m_device->ExecuteCommandList();
+    m_device->WaitForGpu();
 }
 
 void Renderer::BuildAccelerationStructures()
@@ -724,11 +795,11 @@ void Renderer::BuildShaderTables()
     {
         struct RootArguments
         {
-            CubeConstantBuffer cb;
             D3D12_GPU_DESCRIPTOR_HANDLE srv;
+            CubeConstantBuffer cb;
         } arguments;
-        arguments.cb = m_cube_cb;
         arguments.srv = m_texture_srv;
+        arguments.cb = m_cube_cb;
 
         UINT record_count = 1;
         UINT record_size = shader_id_size + sizeof(arguments);
@@ -736,71 +807,4 @@ void Renderer::BuildShaderTables()
         hit_group_table.push_back(ShaderRecord(hit_group_id, shader_id_size, &arguments, sizeof(arguments)));
         m_hit_group_table = hit_group_table.GetResource();
     }
-}
-
-void Renderer::CreateTexture()
-{
-    auto device = m_device->GetD3DDevice();
-    auto cmd = m_device->GetCommandList();
-
-    cmd->Reset(m_device->GetCommandAllocator(), nullptr);
-
-    // Describe and create a Texture2D.
-    D3D12_RESOURCE_DESC desc = { };
-    desc.MipLevels = 1;
-    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    desc.Width = 1;
-    desc.Height = 1;
-    desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-    desc.DepthOrArraySize = 1;
-    desc.SampleDesc.Count = 1;
-    desc.SampleDesc.Quality = 0;
-    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-
-    ThrowIfFailed(device->CreateCommittedResource(
-        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
-        D3D12_HEAP_FLAG_NONE,
-        &desc,
-        D3D12_RESOURCE_STATE_COPY_DEST,
-        nullptr,
-        IID_PPV_ARGS(&m_texture)));
-
-    const UINT64 upload_size = GetRequiredIntermediateSize(m_texture.Get(), 0, 1);
-
-    // Create the GPU upload buffer.
-    ComPtr<ID3D12Resource> upload_heap;
-    ThrowIfFailed(device->CreateCommittedResource(
-        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-        D3D12_HEAP_FLAG_NONE,
-        &CD3DX12_RESOURCE_DESC::Buffer(upload_size),
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        nullptr,
-        IID_PPV_ARGS(&upload_heap)));
-
-    // Copy data to the intermediate upload heap and then schedule a copy 
-    // from the upload heap to the Texture2D.
-    UINT32 data = 0xFFFFFFFF;
-
-    D3D12_SUBRESOURCE_DATA texture_data = { };
-    texture_data.pData = &data;
-    texture_data.RowPitch = 4;
-    texture_data.SlicePitch = texture_data.RowPitch * 1;
-
-    UpdateSubresources(cmd, m_texture.Get(), upload_heap.Get(), 0, 0, 1, &texture_data);
-    cmd->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_texture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ));
-
-    D3D12_CPU_DESCRIPTOR_HANDLE desc_handle;
-    m_texture_srv_index = this->AllocateDescriptor(&desc_handle);
-
-    // Describe and create a SRV for the texture.
-    D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = { };
-    srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srv_desc.Format = desc.Format;
-    srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srv_desc.Texture2D.MipLevels = 1;
-    device->CreateShaderResourceView(m_texture.Get(), nullptr, desc_handle);
-    m_texture_srv = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptor_heap->GetGPUDescriptorHandleForHeapStart(), m_texture_srv_index, m_descriptor_size);
-
-    m_device->ExecuteCommandList();
-    m_device->WaitForGpu();
 }

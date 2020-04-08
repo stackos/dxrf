@@ -22,8 +22,8 @@ private:
     struct D3DBuffer
     {
         ComPtr<ID3D12Resource> resource;
-        D3D12_CPU_DESCRIPTOR_HANDLE cpu_desc;
-        D3D12_GPU_DESCRIPTOR_HANDLE gpu_desc;
+        D3D12_CPU_DESCRIPTOR_HANDLE cpu_desc = { };
+        D3D12_GPU_DESCRIPTOR_HANDLE gpu_desc = { };
     };
 
     void InitializeScene();
@@ -43,10 +43,10 @@ private:
     void CreateRaytracingPipelineStateObject();
     void BuildGeometry();
     UINT CreateBufferSRV(D3DBuffer* buffer, UINT numElements, UINT elementSize);
+    void CreateTexture();
     void BuildAccelerationStructures();
     void CreateConstantBuffers();
     void BuildShaderTables();
-    void CreateTexture();
 
 private:
     static const int BACK_BUFFER_COUNT = 3;
@@ -64,7 +64,7 @@ private:
 
     // Raytracing output
     ComPtr<ID3D12Resource> m_raytracing_output;
-    D3D12_GPU_DESCRIPTOR_HANDLE m_raytracing_output_descriptor;
+    D3D12_GPU_DESCRIPTOR_HANDLE m_raytracing_output_descriptor = { };
     UINT m_raytracing_output_descriptor_index = UINT_MAX;
 
     // Root signatures
@@ -77,11 +77,11 @@ private:
     ComPtr<ID3D12StateObject> m_dxr_state;
 
     // Raytracing scene
-    SceneConstantBuffer m_scene_cb[BACK_BUFFER_COUNT];
-    CubeConstantBuffer m_cube_cb;
-    XMVECTOR m_eye;
-    XMVECTOR m_at;
-    XMVECTOR m_up;
+    SceneConstantBuffer m_scene_cb[BACK_BUFFER_COUNT] = { };
+    CubeConstantBuffer m_cube_cb = { };
+    XMVECTOR m_eye = { };
+    XMVECTOR m_at = { };
+    XMVECTOR m_up = { };
 
     // Geometry
     D3DBuffer m_vertex_buffer;
@@ -98,7 +98,7 @@ private:
         SceneConstantBuffer constants;
         uint8_t alignment_padding[D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT];
     };
-    AlignedSceneConstantBuffer* m_mapped_cb;
+    AlignedSceneConstantBuffer* m_mapped_cb = nullptr;
     ComPtr<ID3D12Resource> m_frame_cb;
 
     // Shader tables
@@ -107,6 +107,6 @@ private:
     ComPtr<ID3D12Resource> m_raygen_table;
 
     ComPtr<ID3D12Resource> m_texture;
-    D3D12_GPU_DESCRIPTOR_HANDLE m_texture_srv;
+    D3D12_GPU_DESCRIPTOR_HANDLE m_texture_srv = { };
     UINT m_texture_srv_index = UINT_MAX;
 };
