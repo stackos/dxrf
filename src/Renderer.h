@@ -26,6 +26,13 @@ private:
         D3D12_GPU_DESCRIPTOR_HANDLE gpu_desc = { };
     };
 
+    struct D3DTexture
+    {
+        ComPtr<ID3D12Resource> texture;
+        D3D12_GPU_DESCRIPTOR_HANDLE srv = { };
+        UINT srv_index = UINT_MAX;
+    };
+
     void InitializeScene();
     void UpdateCameraMatrices();
     void CreateDeviceDependentResources();
@@ -43,7 +50,7 @@ private:
     void CreateRaytracingPipelineStateObject();
     void BuildGeometry();
     UINT CreateBufferSRV(D3DBuffer* buffer, UINT numElements, UINT elementSize);
-    void CreateTexture();
+    void CreateTexture(uint32_t color, D3DTexture* texture);
     void BuildAccelerationStructures();
     void CreateConstantBuffers();
     void BuildShaderTables();
@@ -106,7 +113,6 @@ private:
     ComPtr<ID3D12Resource> m_hit_group_table;
     ComPtr<ID3D12Resource> m_raygen_table;
 
-    ComPtr<ID3D12Resource> m_texture;
-    D3D12_GPU_DESCRIPTOR_HANDLE m_texture_srv = { };
-    UINT m_texture_srv_index = UINT_MAX;
+    D3DTexture m_texture_bg;
+    D3DTexture m_texture_mesh;
 };

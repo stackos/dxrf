@@ -181,7 +181,8 @@ void Renderer::CreateDeviceDependentResources()
     this->CreateRaytracingInterfaces();
     this->CreateRaytracingPipelineStateObject();
     this->BuildGeometry();
-    this->CreateTexture();
+    this->CreateTexture(0xFF0000FF, &m_texture_mesh);
+    this->CreateTexture(0xFFFF0000, &m_texture_bg);
     this->BuildAccelerationStructures();
     this->CreateConstantBuffers();
     this->BuildShaderTables();
@@ -195,7 +196,8 @@ void Renderer::CreateWindowSizeDependentResources()
 
 void Renderer::ReleaseDeviceDependentResources()
 {
-    m_texture.Reset();
+    m_texture_bg.texture.Reset();
+    m_texture_mesh.texture.Reset();
 
     m_miss_table.Reset();
     m_hit_group_table.Reset();
@@ -231,11 +233,12 @@ void Renderer::CreateDescriptorHeap()
     auto device = m_device->GetD3DDevice();
 
     D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-    // Allocate a heap for 3 descriptors:
+    // Allocate a heap for 5 descriptors:
     // 2 - vertex and index buffer SRVs
     // 1 - raytracing output texture SRV
     // 1 - raytracing mesh texture SRV
-    desc.NumDescriptors = 4;
+    // 1 - raytracing bg texture SRV
+    desc.NumDescriptors = 5;
     desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     desc.NodeMask = 0;
@@ -306,7 +309,7 @@ void Renderer::DoRaytracing()
         // Set index and successive vertex buffer decriptor tables
         cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::VertexBuffersSlot, m_index_buffer.gpu_desc);
         cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::OutputViewSlot, m_raytracing_output_descriptor);
-        cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::TextureSlot, m_texture_srv);
+        cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::TextureSlot, m_texture_bg.srv);
     };
 
     cmd->SetComputeRootSignature(m_raytracing_global_sig.Get());
@@ -550,7 +553,7 @@ UINT Renderer::CreateBufferSRV(D3DBuffer* buffer, UINT numElements, UINT element
     return desc_index;
 }
 
-void Renderer::CreateTexture()
+void Renderer::CreateTexture(uint32_t color, D3DTexture* texture)
 {
     auto device = m_device->GetD3DDevice();
     auto cmd = m_device->GetCommandList();
@@ -575,9 +578,9 @@ void Renderer::CreateTexture()
         &desc,
         D3D12_RESOURCE_STATE_COPY_DEST,
         nullptr,
-        IID_PPV_ARGS(&m_texture)));
+        IID_PPV_ARGS(&texture->texture)));
 
-    const UINT64 upload_size = GetRequiredIntermediateSize(m_texture.Get(), 0, 1);
+    const UINT64 upload_size = GetRequiredIntermediateSize(texture->texture.Get(), 0, 1);
 
     // Create the GPU upload buffer.
     ComPtr<ID3D12Resource> upload_heap;
@@ -591,18 +594,16 @@ void Renderer::CreateTexture()
 
     // Copy data to the intermediate upload heap and then schedule a copy 
     // from the upload heap to the Texture2D.
-    UINT8 data[] = { 0xFF, 0x00, 0x00, 0x00 };
-
     D3D12_SUBRESOURCE_DATA texture_data = { };
-    texture_data.pData = &data;
+    texture_data.pData = &color;
     texture_data.RowPitch = 4;
     texture_data.SlicePitch = texture_data.RowPitch * 1;
 
-    UpdateSubresources(cmd, m_texture.Get(), upload_heap.Get(), 0, 0, 1, &texture_data);
-    cmd->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_texture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ));
+    UpdateSubresources(cmd, texture->texture.Get(), upload_heap.Get(), 0, 0, 1, &texture_data);
+    cmd->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(texture->texture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ));
 
     D3D12_CPU_DESCRIPTOR_HANDLE desc_handle;
-    m_texture_srv_index = this->AllocateDescriptor(&desc_handle);
+    texture->srv_index = this->AllocateDescriptor(&desc_handle);
 
     // Describe and create a SRV for the texture.
     D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = { };
@@ -610,8 +611,8 @@ void Renderer::CreateTexture()
     srv_desc.Format = desc.Format;
     srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     srv_desc.Texture2D.MipLevels = 1;
-    device->CreateShaderResourceView(m_texture.Get(), nullptr, desc_handle);
-    m_texture_srv = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptor_heap->GetGPUDescriptorHandleForHeapStart(), m_texture_srv_index, m_descriptor_size);
+    device->CreateShaderResourceView(texture->texture.Get(), nullptr, desc_handle);
+    texture->srv = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptor_heap->GetGPUDescriptorHandleForHeapStart(), texture->srv_index, m_descriptor_size);
 
     m_device->ExecuteCommandList();
     m_device->WaitForGpu();
@@ -798,7 +799,7 @@ void Renderer::BuildShaderTables()
             D3D12_GPU_DESCRIPTOR_HANDLE srv;
             CubeConstantBuffer cb;
         } arguments;
-        arguments.srv = m_texture_srv;
+        arguments.srv = m_texture_mesh.srv;
         arguments.cb = m_cube_cb;
 
         UINT record_count = 1;

@@ -159,7 +159,6 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 
     float4 diffuseColor = CalculateDiffuseLighting(hitPosition, triangleNormal);
     float4 color = g_sceneCB.lightAmbientColor + diffuseColor;
-    color = g_cubeCB.albedo;
     color = g_texture_local.SampleLevel(g_sampler, float2(0.0, 0.0), 0);
 
     payload.color = color;
@@ -168,7 +167,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 [shader("miss")]
 void MyMissShader(inout RayPayload payload)
 {
-    float4 background = float4(0.0f, 0.2f, 0.4f, 1.0f);
+    float4 background = g_texture_global.SampleLevel(g_sampler, float2(0.0, 0.0), 0);
     payload.color = background;
 }
 
