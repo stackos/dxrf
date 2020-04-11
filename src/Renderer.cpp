@@ -95,6 +95,15 @@ void Renderer::OnSizeChanged(int width, int height, bool minimized)
 
 void Renderer::Update()
 {
+    m_eye = { 4.0f, 2.0f, -4.0f, 1.0f };
+    m_at = { 0.0f, 0.0f, 0.0f, 1.0f };
+    m_up = { 0.0f, 1.0f, 0.0f, 1.0f };
+
+    static float deg = 0.0f;
+    deg += 0.01f;
+    XMMATRIX rot = XMMatrixRotationAxis({ 0.0f, 1.0f, 0.0 }, deg);
+    m_eye = XMVector4Transform(m_eye, rot);
+
     this->UpdateCameraMatrices();
 }
 
@@ -128,28 +137,13 @@ void Renderer::InitializeScene()
 {
     auto frame_index = m_device->GetCurrentFrameIndex();
 
-    // Setup materials.
-    {
-        m_cube_cb.albedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-    }
+    m_cube_cb.albedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 
-    // Setup camera.
-    {
-        // Initialize the view and projection inverse matrices.
-        m_eye = { 0.0f, 2.0f, -5.0f, 1.0f };
-        m_at = { 0.0f, 0.0f, 0.0f, 1.0f };
-        XMVECTOR right = { 1.0f, 0.0f, 0.0f, 0.0f };
+    m_eye = { 4.0f, 2.0f, -4.0f, 1.0f };
+    m_at = { 0.0f, 0.0f, 0.0f, 1.0f };
+    m_up = { 0.0f, 1.0f, 0.0f, 1.0f };
 
-        XMVECTOR direction = XMVector4Normalize(m_at - m_eye);
-        m_up = XMVector3Normalize(XMVector3Cross(direction, right));
-
-        // Rotate camera around Y axis.
-        XMMATRIX rotate = XMMatrixRotationY(XMConvertToRadians(45.0f));
-        m_eye = XMVector3Transform(m_eye, rotate);
-        m_up = XMVector3Transform(m_up, rotate);
-
-        this->UpdateCameraMatrices();
-    }
+    this->UpdateCameraMatrices();
 
     for (auto& cb : m_scene_cb)
     {
@@ -191,9 +185,24 @@ void Renderer::CreateDeviceDependentResources()
         }
     }
 
-    uint32_t color = 0xFFFF0000;
-    std::vector<const void*> faces_data(6, &color);
-    this->CreateTexture(&m_texture_bg, 1, 1, true, &faces_data[0]);
+    {
+        int w, h, c;
+
+        std::vector<void*> datas(6);
+        for (int i = 0; i < 6; ++i)
+        {
+            char path[MAX_PATH];
+            sprintf(path, "%s/assets/sky/0_%d.png", m_work_dir, i);
+            datas[i] = stbi_load(path, &w, &h, &c, 4);
+        }
+
+        this->CreateTexture(&m_texture_bg, w, h, true, (const void**) &datas[0]);
+
+        for (int i = 0; i < 6; ++i)
+        {
+            stbi_image_free(datas[i]);
+        }
+    }
 
     this->BuildAccelerationStructures();
     this->CreateConstantBuffers();

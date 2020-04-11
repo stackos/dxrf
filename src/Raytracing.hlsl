@@ -145,7 +145,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 [shader("miss")]
 void MyMissShader(inout RayPayload payload)
 {
-    float4 background = g_texture_global.SampleLevel(g_sampler, float3(0, 0, 1), 0);
+    float4 background = g_texture_global.SampleLevel(g_sampler, WorldRayDirection(), 0);
     payload.color = background;
 }
 
