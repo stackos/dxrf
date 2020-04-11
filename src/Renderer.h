@@ -50,7 +50,7 @@ private:
     void CreateRaytracingPipelineStateObject();
     void BuildGeometry();
     UINT CreateBufferSRV(D3DBuffer* buffer, UINT numElements, UINT elementSize);
-    void CreateTexture(uint32_t color, D3DTexture* texture);
+    void CreateTexture(D3DTexture* texture, int width, int height, bool cube, const void** faces_data);
     void BuildAccelerationStructures();
     void CreateConstantBuffers();
     void BuildShaderTables();
@@ -58,6 +58,7 @@ private:
 private:
     static const int BACK_BUFFER_COUNT = 3;
 
+    char m_work_dir[MAX_PATH];
     HWND m_hwnd = NULL;
     int m_width = 0;
     int m_height = 0;

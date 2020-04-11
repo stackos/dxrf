@@ -2,6 +2,9 @@
 #include "DirectXRaytracingHelper.h"
 #include "CompiledShaders/Raytracing.hlsl.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "3rd/stb/stb_image.h"
+
 namespace GlobalRootSignatureParams
 {
     enum Value
@@ -36,6 +39,10 @@ Renderer::Renderer(HWND hwnd, int width, int height)
     m_width = width;
     m_height = height;
     m_aspect = width / (float) height;
+
+    GetModuleFileName(NULL, m_work_dir, MAX_PATH);
+    size_t len = strrchr(m_work_dir, '\\') - m_work_dir;
+    m_work_dir[len] = 0;
 }
 
 void Renderer::Init()
@@ -47,7 +54,7 @@ void Renderer::Init()
         D3D_FEATURE_LEVEL_11_0,
         // Sample shows handling of use cases with tearing support, which is OS dependent and has been supported since TH2.
         // Since the sample requires build 1809 (RS5) or higher, we don't need to handle non-tearing cases.
-        DeviceResources::c_RequireTearingSupport,
+        0,// DeviceResources::c_RequireTearingSupport,
         UINT_MAX);
     m_device->RegisterDeviceNotify(this);
     m_device->SetWindow(m_hwnd, m_width, m_height);
@@ -123,7 +130,7 @@ void Renderer::InitializeScene()
 
     // Setup materials.
     {
-        m_cube_cb.albedo = XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f);
+        m_cube_cb.albedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
     }
 
     // Setup camera.
@@ -144,17 +151,6 @@ void Renderer::InitializeScene()
         this->UpdateCameraMatrices();
     }
 
-    {
-        XMFLOAT4 light_pos = XMFLOAT4(0.0f, 1.8f, -3.0f, 0.0f);
-        m_scene_cb[frame_index].lightPosition = XMLoadFloat4(&light_pos);
-
-        XMFLOAT4 light_ambient_color = XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
-        m_scene_cb[frame_index].lightAmbientColor = XMLoadFloat4(&light_ambient_color);
-
-        XMFLOAT4 light_color = XMFLOAT4(0.5f, 0.0f, 0.0f, 1.0f);
-        m_scene_cb[frame_index].lightDiffuseColor = XMLoadFloat4(&light_color);
-    }
-
     for (auto& cb : m_scene_cb)
     {
         cb = m_scene_cb[frame_index];
@@ -170,8 +166,8 @@ void Renderer::UpdateCameraMatrices()
     XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(fov), m_aspect, 1.0f, 125.0f);
     XMMATRIX view_proj = view * proj;
 
-    m_scene_cb[frame_index].cameraPosition = m_eye;
-    m_scene_cb[frame_index].projectionToWorld = XMMatrixInverse(nullptr, view_proj);
+    m_scene_cb[frame_index].camera_position = m_eye;
+    m_scene_cb[frame_index].projection_to_world = XMMatrixInverse(nullptr, view_proj);
 }
 
 void Renderer::CreateDeviceDependentResources()
@@ -181,8 +177,24 @@ void Renderer::CreateDeviceDependentResources()
     this->CreateRaytracingInterfaces();
     this->CreateRaytracingPipelineStateObject();
     this->BuildGeometry();
-    this->CreateTexture(0xFF0000FF, &m_texture_mesh);
-    this->CreateTexture(0xFFFF0000, &m_texture_bg);
+
+    {
+        int w, h, c;
+
+        char path[MAX_PATH];
+        sprintf(path, "%s/assets/720x1280.png", m_work_dir);
+        void* data = stbi_load(path, &w, &h, &c, 4);
+        if (data)
+        {
+            this->CreateTexture(&m_texture_mesh, w, h, false, (const void**) &data);
+            stbi_image_free(data);
+        }
+    }
+
+    uint32_t color = 0xFFFF0000;
+    std::vector<const void*> faces_data(6, &color);
+    this->CreateTexture(&m_texture_bg, 1, 1, true, &faces_data[0]);
+
     this->BuildAccelerationStructures();
     this->CreateConstantBuffers();
     this->BuildShaderTables();
@@ -350,7 +362,7 @@ void Renderer::CreateRootSignatures()
     auto device = m_device->GetD3DDevice();
 
     {
-        D3D12_STATIC_SAMPLER_DESC sampler = {};
+        D3D12_STATIC_SAMPLER_DESC sampler = { };
         sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
         sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
         sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
@@ -463,35 +475,35 @@ void Renderer::BuildGeometry()
     // Cube vertices positions and corresponding triangle normals.
     Vertex vertices[] =
     {
-        { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
-        { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
-        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+        { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(0.0f, 1.0f) },
+        { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(1.0f, 1.0f) },
+        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(1.0f, 0.0f) },
+        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(0.0f, 0.0f) },
 
-        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
-        { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
-        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
+        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(0.0f, 1.0f) },
+        { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(1.0f, 1.0f) },
+        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(1.0f, 0.0f) },
+        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(0.0f, 0.0f) },
 
-        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
+        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(0.0f, 1.0f) },
+        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(1.0f, 1.0f) },
+        { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(1.0f, 0.0f) },
+        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(0.0f, 0.0f) },
 
-        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
-        { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
-        { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
-        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(0.0f, 1.0f) },
+        { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(1.0f, 1.0f) },
+        { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(1.0f, 0.0f) },
+        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(0.0f, 0.0f) },
 
-        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
-        { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
-        { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
+        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT2(0.0f, 1.0f) },
+        { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT2(1.0f, 1.0f) },
+        { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT2(1.0f, 0.0f) },
+        { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT2(0.0f, 0.0f) },
 
-        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
-        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
-        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
+        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(0.0f, 1.0f) },
+        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(1.0f, 1.0f) },
+        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(1.0f, 0.0f) },
+        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(0.0f, 0.0f) },
     };
 
     // Cube indices.
@@ -553,24 +565,30 @@ UINT Renderer::CreateBufferSRV(D3DBuffer* buffer, UINT numElements, UINT element
     return desc_index;
 }
 
-void Renderer::CreateTexture(uint32_t color, D3DTexture* texture)
+void Renderer::CreateTexture(D3DTexture* texture, int width, int height, bool cube, const void** faces_data)
 {
     auto device = m_device->GetD3DDevice();
     auto cmd = m_device->GetCommandList();
 
     cmd->Reset(m_device->GetCommandAllocator(), nullptr);
 
+    D3D12_SRV_DIMENSION view_dimension = cube ? D3D12_SRV_DIMENSION_TEXTURECUBE : D3D12_SRV_DIMENSION_TEXTURE2D;
+    int array_size = cube ? 6 : 1;
+    int mip_levels = 1;
+    DXGI_FORMAT format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    int pixel_size = 4;
+
     // Describe and create a Texture2D.
     D3D12_RESOURCE_DESC desc = { };
-    desc.MipLevels = 1;
-    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    desc.Width = 1;
-    desc.Height = 1;
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Width = width;
+    desc.Height = height;
+    desc.DepthOrArraySize = array_size;
+    desc.Format = format;
+    desc.MipLevels = mip_levels;
     desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-    desc.DepthOrArraySize = 1;
     desc.SampleDesc.Count = 1;
     desc.SampleDesc.Quality = 0;
-    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 
     ThrowIfFailed(device->CreateCommittedResource(
         &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
@@ -580,9 +598,9 @@ void Renderer::CreateTexture(uint32_t color, D3DTexture* texture)
         nullptr,
         IID_PPV_ARGS(&texture->texture)));
 
-    const UINT64 upload_size = GetRequiredIntermediateSize(texture->texture.Get(), 0, 1);
-
     // Create the GPU upload buffer.
+    const UINT64 upload_size = GetRequiredIntermediateSize(texture->texture.Get(), 0, array_size);
+
     ComPtr<ID3D12Resource> upload_heap;
     ThrowIfFailed(device->CreateCommittedResource(
         &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
@@ -592,14 +610,15 @@ void Renderer::CreateTexture(uint32_t color, D3DTexture* texture)
         nullptr,
         IID_PPV_ARGS(&upload_heap)));
 
-    // Copy data to the intermediate upload heap and then schedule a copy 
-    // from the upload heap to the Texture2D.
-    D3D12_SUBRESOURCE_DATA texture_data = { };
-    texture_data.pData = &color;
-    texture_data.RowPitch = 4;
-    texture_data.SlicePitch = texture_data.RowPitch * 1;
+    std::vector<D3D12_SUBRESOURCE_DATA> datas(array_size);
+    for (int i = 0; i < array_size; ++i)
+    {
+        datas[i].pData = faces_data[i];
+        datas[i].RowPitch = width * pixel_size;
+        datas[i].SlicePitch = datas[i].RowPitch * height;
+    }
 
-    UpdateSubresources(cmd, texture->texture.Get(), upload_heap.Get(), 0, 0, 1, &texture_data);
+    UpdateSubresources(cmd, texture->texture.Get(), upload_heap.Get(), 0, 0, array_size, &datas[0]);
     cmd->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(texture->texture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ));
 
     D3D12_CPU_DESCRIPTOR_HANDLE desc_handle;
@@ -608,10 +627,17 @@ void Renderer::CreateTexture(uint32_t color, D3DTexture* texture)
     // Describe and create a SRV for the texture.
     D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = { };
     srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srv_desc.Format = desc.Format;
-    srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srv_desc.Texture2D.MipLevels = 1;
-    device->CreateShaderResourceView(texture->texture.Get(), nullptr, desc_handle);
+    srv_desc.Format = format;
+    srv_desc.ViewDimension = view_dimension;
+    if (cube)
+    {
+        srv_desc.TextureCube.MipLevels = mip_levels;
+    }
+    else
+    {
+        srv_desc.Texture2D.MipLevels = mip_levels;
+    }
+    device->CreateShaderResourceView(texture->texture.Get(), &srv_desc, desc_handle);
     texture->srv = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptor_heap->GetGPUDescriptorHandleForHeapStart(), texture->srv_index, m_descriptor_size);
 
     m_device->ExecuteCommandList();

@@ -1,14 +1,3 @@
-//*********************************************************
-//
-// Copyright (c) Microsoft. All rights reserved.
-// This code is licensed under the MIT License (MIT).
-// THIS CODE IS PROVIDED *AS IS* WITHOUT WARRANTY OF
-// ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING ANY
-// IMPLIED WARRANTIES OF FITNESS FOR A PARTICULAR
-// PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT.
-//
-//*********************************************************
-
 #ifndef RAYTRACING_HLSL
 #define RAYTRACING_HLSL
 
@@ -20,9 +9,9 @@ RWTexture2D<float4> RenderTarget : register(u0);
 ByteAddressBuffer Indices : register(t1, space0);
 StructuredBuffer<Vertex> Vertices : register(t2, space0);
 
-ConstantBuffer<SceneConstantBuffer> g_sceneCB : register(b0);
-ConstantBuffer<CubeConstantBuffer> g_cubeCB : register(b1);
-Texture2D<float4> g_texture_global : register(t3);
+ConstantBuffer<SceneConstantBuffer> g_scene : register(b0);
+ConstantBuffer<CubeConstantBuffer> g_cube : register(b1);
+TextureCube<float4> g_texture_global : register(t3);
 Texture2D<float4> g_texture_local : register(t4);
 SamplerState g_sampler : register(s0);
 
@@ -70,12 +59,21 @@ float3 HitWorldPosition()
     return WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
 }
 
-// Retrieve attribute at a hit position interpolated from vertex attributes using the hit's barycentrics.
-float3 HitAttribute(float3 vertexAttribute[3], BuiltInTriangleIntersectionAttributes attr)
+Vertex HitVertex(Vertex vertices[3], BuiltInTriangleIntersectionAttributes attr)
 {
-    return vertexAttribute[0] +
-        attr.barycentrics.x * (vertexAttribute[1] - vertexAttribute[0]) +
-        attr.barycentrics.y * (vertexAttribute[2] - vertexAttribute[0]);
+    Vertex v;
+
+    v.position = vertices[0].position +
+        attr.barycentrics.x * (vertices[1].position - vertices[0].position) +
+        attr.barycentrics.y * (vertices[2].position - vertices[0].position);
+    v.normal = vertices[0].normal +
+        attr.barycentrics.x * (vertices[1].normal - vertices[0].normal) +
+        attr.barycentrics.y * (vertices[2].normal - vertices[0].normal);
+    v.uv = vertices[0].uv +
+        attr.barycentrics.x * (vertices[1].uv - vertices[0].uv) +
+        attr.barycentrics.y * (vertices[2].uv - vertices[0].uv);
+
+    return v;
 }
 
 // Generate a ray in world space for a camera pixel corresponding to an index from the dispatched 2D grid.
@@ -88,22 +86,11 @@ inline void GenerateCameraRay(uint2 index, out float3 origin, out float3 directi
     screenPos.y = -screenPos.y;
 
     // Unproject the pixel coordinate into a ray.
-    float4 world = mul(float4(screenPos, 0, 1), g_sceneCB.projectionToWorld);
+    float4 world = mul(float4(screenPos, 0, 1), g_scene.projection_to_world);
 
     world.xyz /= world.w;
-    origin = g_sceneCB.cameraPosition.xyz;
+    origin = g_scene.camera_position.xyz;
     direction = normalize(world.xyz - origin);
-}
-
-// Diffuse lighting calculation.
-float4 CalculateDiffuseLighting(float3 hitPosition, float3 normal)
-{
-    float3 pixelToLight = normalize(g_sceneCB.lightPosition.xyz - hitPosition);
-
-    // Diffuse contribution.
-    float fNDotL = max(0.0f, dot(pixelToLight, normal));
-
-    return g_cubeCB.albedo * g_sceneCB.lightDiffuseColor * fNDotL;
 }
 
 [shader("raygeneration")]
@@ -134,8 +121,6 @@ void MyRaygenShader()
 [shader("closesthit")]
 void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 {
-    float3 hitPosition = HitWorldPosition();
-
     // Get the base index of the triangle's first 16 bit index.
     uint indexSizeInBytes = 2;
     uint indicesPerTriangle = 3;
@@ -145,21 +130,14 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     // Load up 3 16 bit indices for the triangle.
     const uint3 indices = Load3x16BitIndices(baseIndex);
 
-    // Retrieve corresponding vertex normals for the triangle vertices.
-    float3 vertexNormals[3] = { 
-        Vertices[indices[0]].normal, 
-        Vertices[indices[1]].normal, 
-        Vertices[indices[2]].normal 
+    Vertex vertices[3] = { 
+        Vertices[indices[0]], 
+        Vertices[indices[1]], 
+        Vertices[indices[2]] 
     };
+    Vertex vertex = HitVertex(vertices, attr);
 
-    // Compute the triangle's normal.
-    // This is redundant and done for illustration purposes 
-    // as all the per-vertex normals are the same and match triangle's normal in this sample. 
-    float3 triangleNormal = HitAttribute(vertexNormals, attr);
-
-    float4 diffuseColor = CalculateDiffuseLighting(hitPosition, triangleNormal);
-    float4 color = g_sceneCB.lightAmbientColor + diffuseColor;
-    color = g_texture_local.SampleLevel(g_sampler, float2(0.0, 0.0), 0);
+    float4 color = g_cube.albedo * g_texture_local.SampleLevel(g_sampler, vertex.uv, 0);
 
     payload.color = color;
 }
@@ -167,8 +145,8 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 [shader("miss")]
 void MyMissShader(inout RayPayload payload)
 {
-    float4 background = g_texture_global.SampleLevel(g_sampler, float2(0.0, 0.0), 0);
+    float4 background = g_texture_global.SampleLevel(g_sampler, float3(0, 0, 1), 0);
     payload.color = background;
 }
 
-#endif // RAYTRACING_HLSL
+#endif

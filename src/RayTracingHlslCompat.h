@@ -23,11 +23,8 @@ typedef UINT16 Index;
 
 struct SceneConstantBuffer
 {
-    XMMATRIX projectionToWorld;
-    XMVECTOR cameraPosition;
-    XMVECTOR lightPosition;
-    XMVECTOR lightAmbientColor;
-    XMVECTOR lightDiffuseColor;
+    XMMATRIX projection_to_world;
+    XMVECTOR camera_position;
 };
 
 struct CubeConstantBuffer
@@ -39,6 +36,7 @@ struct Vertex
 {
     XMFLOAT3 position;
     XMFLOAT3 normal;
+    XMFLOAT2 uv;
 };
 
 #endif // RAYTRACINGHLSLCOMPAT_H
