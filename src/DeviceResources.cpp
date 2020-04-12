@@ -228,6 +228,16 @@ void DeviceResources::CreateDeviceResources()
     {
         ThrowIfFailed(E_FAIL, "CreateEvent failed.\n");
     }
+
+    D3D12_DESCRIPTOR_HEAP_DESC desc = { };
+    desc.NumDescriptors = NumDescriptors;
+    desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    desc.NodeMask = 0;
+    m_d3dDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_descriptor_heap));
+    NAME_D3D12_OBJECT(m_descriptor_heap);
+    m_descriptor_increment_size = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    m_descriptors_allocated.resize(NumDescriptors, false);
 }
 
 // These resources need to be recreated every time the window size is changed.
@@ -401,6 +411,36 @@ void DeviceResources::CreateWindowSizeDependentResources()
     m_scissorRect.bottom = backBufferHeight;
 }
 
+UINT DeviceResources::AllocateDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE* descriptor, UINT index)
+{
+    m_descriptor_heap.GetAddressOf();
+    auto base = m_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+    if (index >= m_descriptor_heap->GetDesc().NumDescriptors)
+    {
+        for (int i = 0; i < m_descriptors_allocated.size(); ++i)
+        {
+            if (m_descriptors_allocated[i] == false)
+            {
+                m_descriptors_allocated[i] = true;
+                index = i;
+                break;
+            }
+        }
+    }
+    *descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(base, index, m_descriptor_increment_size);
+    return index;
+}
+
+D3D12_GPU_DESCRIPTOR_HANDLE DeviceResources::GetGPUDescriptorHandle(UINT descriptor_index)
+{
+    return CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptor_heap->GetGPUDescriptorHandleForHeapStart(), descriptor_index, m_descriptor_increment_size);
+}
+
+void DeviceResources::ReleaseDescriptor(UINT descriptor_index)
+{
+    m_descriptors_allocated[descriptor_index] = false;
+}
+
 // This method is called when the Win32 window is created (or re-created).
 void DeviceResources::SetWindow(HWND window, int width, int height)
 {
@@ -442,6 +482,10 @@ bool DeviceResources::WindowSizeChanged(int width, int height, bool minimized)
 // Recreate all device resources and set them back to the current state.
 void DeviceResources::HandleDeviceLost()
 {
+    m_descriptor_heap.Reset();
+    m_descriptors_allocated.clear();
+    m_descriptor_increment_size = UINT_MAX;
+
     if (m_deviceNotify)
     {
         m_deviceNotify->OnDeviceLost();

@@ -2,8 +2,10 @@
 
 #include "DeviceResources.h"
 #include "RaytracingHlslCompat.h"
+#include "Texture.h"
 
 using namespace DX;
+using namespace dxrf;
 
 class Renderer : public DX::IDeviceNotify
 {
@@ -39,9 +41,7 @@ private:
     void CreateWindowSizeDependentResources();
     void ReleaseDeviceDependentResources();
     void ReleaseWindowSizeDependentResources();
-    void CreateDescriptorHeap();
     void CreateRaytracingOutputResource();
-    UINT AllocateDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE* descriptor, UINT index = UINT_MAX);
     void DoRaytracing();
     void CopyRaytracingOutputToBackbuffer();
     void CreateRootSignatures();
@@ -50,7 +50,6 @@ private:
     void CreateRaytracingPipelineStateObject();
     void BuildGeometry();
     UINT CreateBufferSRV(D3DBuffer* buffer, UINT numElements, UINT elementSize);
-    void CreateTexture(D3DTexture* texture, int width, int height, bool cube, const void** faces_data);
     void BuildAccelerationStructures();
     void CreateConstantBuffers();
     void BuildShaderTables();
@@ -64,11 +63,6 @@ private:
     int m_height = 0;
     float m_aspect = 1.0f;
     std::unique_ptr<DeviceResources> m_device;
-
-    // Descriptors
-    ComPtr<ID3D12DescriptorHeap> m_descriptor_heap;
-    UINT m_descriptors_allocated = 0;
-    UINT m_descriptor_size = UINT_MAX;
 
     // Raytracing output
     ComPtr<ID3D12Resource> m_raytracing_output;
@@ -92,8 +86,10 @@ private:
     XMVECTOR m_up = { };
 
     // Geometry
-    D3DBuffer m_vertex_buffer;
     D3DBuffer m_index_buffer;
+    D3DBuffer m_vertex_buffer;
+    UINT m_index_buffer_heap_index = UINT_MAX;
+    UINT m_vertex_buffer_heap_index = UINT_MAX;
 
     // Acceleration structure
     ComPtr<ID3D12Resource> m_bottom_structure;
@@ -114,6 +110,6 @@ private:
     ComPtr<ID3D12Resource> m_hit_group_table;
     ComPtr<ID3D12Resource> m_raygen_table;
 
-    D3DTexture m_texture_bg;
-    D3DTexture m_texture_mesh;
+    std::shared_ptr<Texture> m_texture_bg;
+    std::shared_ptr<Texture> m_texture_mesh;
 };

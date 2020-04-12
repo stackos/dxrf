@@ -79,6 +79,11 @@ namespace DX
             }
         }
 
+        UINT AllocateDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE* descriptor, UINT index = UINT_MAX);
+        D3D12_GPU_DESCRIPTOR_HANDLE GetGPUDescriptorHandle(UINT descriptor_index);
+        void ReleaseDescriptor(UINT descriptor_index);
+        ID3D12DescriptorHeap* GetDescriptorHeap() { return m_descriptor_heap.Get(); }
+
         void Prepare(D3D12_RESOURCE_STATES beforeState = D3D12_RESOURCE_STATE_PRESENT);
         void Present(D3D12_RESOURCE_STATES beforeState = D3D12_RESOURCE_STATE_RENDER_TARGET);
         void ExecuteCommandList();
@@ -173,6 +178,12 @@ namespace DX
 
         // The IDeviceNotify can be held directly as it owns the DeviceResources.
         IDeviceNotify*                                      m_deviceNotify;
+
+        // Common Descriptor Heap
+        static const int NumDescriptors = 200;
+        ComPtr<ID3D12DescriptorHeap> m_descriptor_heap;
+        UINT m_descriptor_increment_size = UINT_MAX;
+        std::vector<bool> m_descriptors_allocated;
     };
 
     class HrException : public std::runtime_error

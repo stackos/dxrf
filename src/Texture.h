@@ -16,23 +16,30 @@ copies or substantial portions of the Software.
 
 #pragma once
 
-#include <d3d12.h>
+#include "DeviceResources.h"
 #include <memory>
+
+using namespace DX;
 
 namespace dxrf
 {
     class Texture
     {
     public:
-        static std::shared_ptr<Texture> CreateTexture2DFromData(int width, int height, DXGI_FORMAT format, const void* data, bool gen_mip_levels);
+        static std::shared_ptr<Texture> CreateTextureFromData(DeviceResources* device, int width, int height, DXGI_FORMAT format, bool cube, void** faces_data);
         ~Texture();
+        D3D12_GPU_DESCRIPTOR_HANDLE GetSrv() const { return m_srv; }
 
     private:
         Texture() = default;
 
     private:
+        DeviceResources* m_device;
         int m_width = 0;
         int m_height = 0;
         DXGI_FORMAT m_format = DXGI_FORMAT_UNKNOWN;
+        ComPtr<ID3D12Resource> m_resource;
+        D3D12_GPU_DESCRIPTOR_HANDLE m_srv = { };
+        UINT m_srv_index = UINT_MAX;
     };
 }
