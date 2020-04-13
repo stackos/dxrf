@@ -26,7 +26,7 @@ namespace dxrf
     class Texture
     {
     public:
-        static std::shared_ptr<Texture> CreateTextureFromData(DeviceResources* device, int width, int height, DXGI_FORMAT format, bool cube, void** faces_data);
+        static std::unique_ptr<Texture> CreateTextureFromData(DeviceResources* device, int width, int height, DXGI_FORMAT format, bool cube, void** faces_data);
         ~Texture();
         D3D12_GPU_DESCRIPTOR_HANDLE GetSrv() const { return m_srv; }
 

@@ -18,12 +18,12 @@ copies or substantial portions of the Software.
 
 namespace dxrf
 {
-    std::shared_ptr<Texture> Texture::CreateTextureFromData(DeviceResources* device, int width, int height, DXGI_FORMAT format, bool cube, void** faces_data)
+    std::unique_ptr<Texture> Texture::CreateTextureFromData(DeviceResources* device, int width, int height, DXGI_FORMAT format, bool cube, void** faces_data)
     {
         auto d3d = device->GetD3DDevice();
         auto cmd = device->GetCommandList();
 
-        std::shared_ptr<Texture> texture(new Texture());
+        std::unique_ptr<Texture> texture(new Texture());
         texture->m_device = device;
         texture->m_width = width;
         texture->m_height = height;

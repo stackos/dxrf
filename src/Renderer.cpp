@@ -166,11 +166,6 @@ void Renderer::UpdateCameraMatrices()
 
 void Renderer::CreateDeviceDependentResources()
 {
-    this->CreateRootSignatures();
-    this->CreateRaytracingInterfaces();
-    this->CreateRaytracingPipelineStateObject();
-    this->BuildGeometry();
-
     {
         int w, h, c;
 
@@ -204,6 +199,11 @@ void Renderer::CreateDeviceDependentResources()
         }
     }
 
+    this->CreateRootSignatures();
+    this->CreateRaytracingInterfaces();
+    this->CreateRaytracingPipelineStateObject();
+    this->LoadScene();
+    this->BuildGeometry();
     this->BuildAccelerationStructures();
     this->CreateConstantBuffers();
     this->BuildShaderTables();
@@ -231,6 +231,8 @@ void Renderer::ReleaseDeviceDependentResources()
 
     m_index_buffer.resource.Reset();
     m_vertex_buffer.resource.Reset();
+
+    m_scene.reset();
 
     m_device->ReleaseDescriptor(m_index_buffer_heap_index);
     m_index_buffer_heap_index = UINT_MAX;
@@ -448,6 +450,14 @@ void Renderer::CreateRaytracingPipelineStateObject()
 #endif
 
     ThrowIfFailed(m_dxr_device->CreateStateObject(pipeline, IID_PPV_ARGS(&m_dxr_state)), "Couldn't create DirectX Raytracing state object.\n");
+}
+
+void Renderer::LoadScene()
+{
+    char data_dir[MAX_PATH];
+    sprintf(data_dir, "%s/assets/scene", m_work_dir);
+
+    m_scene = Scene::LoadFromFile(m_device.get(), data_dir, "objects.go");
 }
 
 void Renderer::BuildGeometry()

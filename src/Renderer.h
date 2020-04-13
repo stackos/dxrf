@@ -3,6 +3,7 @@
 #include "DeviceResources.h"
 #include "RaytracingHlslCompat.h"
 #include "Texture.h"
+#include "Scene.h"
 
 using namespace DX;
 using namespace dxrf;
@@ -48,6 +49,7 @@ private:
     void SerializeAndCreateRaytracingRootSignature(D3D12_ROOT_SIGNATURE_DESC& desc, ComPtr<ID3D12RootSignature>* sig);
     void CreateRaytracingInterfaces();
     void CreateRaytracingPipelineStateObject();
+    void LoadScene();
     void BuildGeometry();
     UINT CreateBufferSRV(D3DBuffer* buffer, UINT numElements, UINT elementSize);
     void BuildAccelerationStructures();
@@ -110,6 +112,8 @@ private:
     ComPtr<ID3D12Resource> m_hit_group_table;
     ComPtr<ID3D12Resource> m_raygen_table;
 
-    std::shared_ptr<Texture> m_texture_bg;
-    std::shared_ptr<Texture> m_texture_mesh;
+    std::unique_ptr<Texture> m_texture_bg;
+    std::unique_ptr<Texture> m_texture_mesh;
+
+    std::unique_ptr<Scene> m_scene;
 };
