@@ -232,12 +232,12 @@ void Renderer::ReleaseDeviceDependentResources()
     m_index_buffer.resource.Reset();
     m_vertex_buffer.resource.Reset();
 
-    m_scene.reset();
+    m_device->ReleaseDescriptor(m_index_buffer.heap_index);
+    m_index_buffer.heap_index = UINT_MAX;
+    m_device->ReleaseDescriptor(m_vertex_buffer.heap_index);
+    m_vertex_buffer.heap_index = UINT_MAX;
 
-    m_device->ReleaseDescriptor(m_index_buffer_heap_index);
-    m_index_buffer_heap_index = UINT_MAX;
-    m_device->ReleaseDescriptor(m_vertex_buffer_heap_index);
-    m_vertex_buffer_heap_index = UINT_MAX;
+    m_scene.reset();
 
     m_dxr_device.Reset();
     m_dxr_cmd.Reset();
@@ -528,9 +528,6 @@ void Renderer::BuildGeometry()
     UINT ib_index = this->CreateBufferSRV(&m_index_buffer, sizeof(indices) / 4, 0);
     UINT vb_index = this->CreateBufferSRV(&m_vertex_buffer, ARRAYSIZE(vertices), sizeof(vertices[0]));
     ThrowIfFalse(vb_index == ib_index + 1, "Vertex Buffer descriptor index must follow that of Index Buffer descriptor index!");
-
-    m_index_buffer_heap_index = ib_index;
-    m_vertex_buffer_heap_index = vb_index;
 }
 
 UINT Renderer::CreateBufferSRV(D3DBuffer* buffer, UINT numElements, UINT elementSize)
@@ -554,10 +551,10 @@ UINT Renderer::CreateBufferSRV(D3DBuffer* buffer, UINT numElements, UINT element
         desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
         desc.Buffer.StructureByteStride = elementSize;
     }
-    UINT desc_index = m_device->AllocateDescriptor(&buffer->cpu_handle);
+    buffer->heap_index = m_device->AllocateDescriptor(&buffer->cpu_handle);
     device->CreateShaderResourceView(buffer->resource.Get(), &desc, buffer->cpu_handle);
-    buffer->gpu_handle = m_device->GetGPUDescriptorHandle(desc_index);
-    return desc_index;
+    buffer->gpu_handle = m_device->GetGPUDescriptorHandle(buffer->heap_index);
+    return buffer->heap_index;
 }
 
 void Renderer::BuildAccelerationStructures()

@@ -51,6 +51,8 @@ namespace dxrf
     struct Mesh
     {
         int index = -1;
+        size_t attribute_offset = 0;
+        size_t index_offset = 0;
         std::string name;
         std::vector<XMFLOAT3> vertices;
         std::vector<XMFLOAT4> colors;
@@ -93,6 +95,8 @@ namespace dxrf
     private:
         Scene() = default;
         std::shared_ptr<Object> ReadObject(std::ifstream& is);
+        void CreateGeometryBuffer();
+        void CreateBufferView(D3DBuffer* buffer, UINT num_elements, UINT element_size);
 
     private:
         DeviceResources* m_device;

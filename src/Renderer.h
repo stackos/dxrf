@@ -76,8 +76,6 @@ private:
     // Geometry
     D3DBuffer m_index_buffer;
     D3DBuffer m_vertex_buffer;
-    UINT m_index_buffer_heap_index = UINT_MAX;
-    UINT m_vertex_buffer_heap_index = UINT_MAX;
 
     // Acceleration structure
     ComPtr<ID3D12Resource> m_bottom_structure;

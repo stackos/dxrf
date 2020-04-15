@@ -15,6 +15,7 @@ copies or substantial portions of the Software.
 */
 
 #include "Scene.h"
+#include "DirectXRaytracingHelper.h"
 #include <DirectXMath.h>
 
 namespace dxrf
@@ -262,6 +263,7 @@ namespace dxrf
         if (is)
         {
             scene->m_root_object = scene->ReadObject(is);
+            scene->CreateGeometryBuffer();
 
             is.close();
         }
@@ -271,6 +273,79 @@ namespace dxrf
 
     Scene::~Scene()
     {
-        
+        m_vertex_buffer.resource.Reset();
+        m_device->ReleaseDescriptor(m_vertex_buffer.heap_index);
+        m_index_buffer.resource.Reset();
+        m_device->ReleaseDescriptor(m_index_buffer.heap_index);
+    }
+
+    void Scene::CreateGeometryBuffer()
+    {
+        std::vector<XMFLOAT3>* vertices = new std::vector<XMFLOAT3>();
+        std::vector<uint16_t>* indices = new std::vector<uint16_t>();
+
+        for (int i = 0; i < m_mesh_array.size(); ++i)
+        {
+            auto& mesh = m_mesh_array[i];
+
+            mesh->attribute_offset = sizeof(XMFLOAT3) * vertices->size();
+            mesh->index_offset = sizeof(uint16_t) * indices->size();
+
+            if (mesh->vertices.size() > 0)
+            {
+                size_t old_size = vertices->size();
+                vertices->resize(old_size + mesh->vertices.size());
+                memcpy(&vertices->at(old_size), &mesh->vertices[0], sizeof(XMFLOAT3) * mesh->vertices.size());
+            }
+            
+            if (mesh->normals.size() > 0)
+            {
+                size_t old_size = vertices->size();
+                vertices->resize(old_size + mesh->normals.size());
+                memcpy(&vertices->at(old_size), &mesh->normals[0], sizeof(XMFLOAT3) * mesh->normals.size());
+            }
+
+            if (mesh->indices.size() > 0)
+            {
+                size_t old_size = indices->size();
+                indices->resize(old_size + mesh->indices.size());
+                memcpy(&indices->at(old_size), &mesh->indices[0], sizeof(uint16_t) * mesh->indices.size());
+            }
+        }
+
+        AllocateUploadBuffer(m_device->GetD3DDevice(), &vertices->at(0), sizeof(XMFLOAT3) * vertices->size(), &m_vertex_buffer.resource);
+        AllocateUploadBuffer(m_device->GetD3DDevice(), &indices->at(0), sizeof(uint16_t) * indices->size(), &m_index_buffer.resource);
+
+        this->CreateBufferView(&m_vertex_buffer, UINT(vertices->size() / 2), UINT(sizeof(XMFLOAT3) * 2)); // position + normal
+        this->CreateBufferView(&m_index_buffer, UINT(indices->size() / 2), 0); // 2 uint16_t as 1 uint32_t element
+
+        delete vertices;
+        delete indices;
+    }
+
+    void Scene::CreateBufferView(D3DBuffer* buffer, UINT num_elements, UINT element_size)
+    {
+        auto device = m_device->GetD3DDevice();
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC desc = { };
+        desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        desc.Buffer.NumElements = num_elements;
+        if (element_size == 0)
+        {
+            desc.Format = DXGI_FORMAT_R32_TYPELESS;
+            desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
+            desc.Buffer.StructureByteStride = 0;
+        }
+        else
+        {
+            desc.Format = DXGI_FORMAT_UNKNOWN;
+            desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+            desc.Buffer.StructureByteStride = element_size;
+        }
+
+        buffer->heap_index = m_device->AllocateDescriptor(&buffer->cpu_handle);
+        device->CreateShaderResourceView(buffer->resource.Get(), &desc, buffer->cpu_handle);
+        buffer->gpu_handle = m_device->GetGPUDescriptorHandle(buffer->heap_index);
     }
 }
