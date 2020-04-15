@@ -22,20 +22,6 @@ public:
     virtual void OnDeviceRestored() override;
 
 private:
-    struct D3DBuffer
-    {
-        ComPtr<ID3D12Resource> resource;
-        D3D12_CPU_DESCRIPTOR_HANDLE cpu_desc = { };
-        D3D12_GPU_DESCRIPTOR_HANDLE gpu_desc = { };
-    };
-
-    struct D3DTexture
-    {
-        ComPtr<ID3D12Resource> texture;
-        D3D12_GPU_DESCRIPTOR_HANDLE srv = { };
-        UINT srv_index = UINT_MAX;
-    };
-
     void InitializeScene();
     void UpdateCameraMatrices();
     void CreateDeviceDependentResources();

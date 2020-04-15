@@ -303,9 +303,9 @@ void Renderer::DoRaytracing()
         auto descriptor_heap = m_device->GetDescriptorHeap();
         desc_cmd->SetDescriptorHeaps(1, &descriptor_heap);
         // Set index and successive vertex buffer decriptor tables
-        cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::VertexBuffersSlot, m_index_buffer.gpu_desc);
+        cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::VertexBuffersSlot, m_index_buffer.gpu_handle);
         cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::OutputViewSlot, m_raytracing_output_descriptor);
-        cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::TextureSlot, m_texture_bg->GetSrv());
+        cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::TextureSlot, m_texture_bg->GetGpuHandle());
     };
 
     cmd->SetComputeRootSignature(m_raytracing_global_sig.Get());
@@ -554,9 +554,9 @@ UINT Renderer::CreateBufferSRV(D3DBuffer* buffer, UINT numElements, UINT element
         desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
         desc.Buffer.StructureByteStride = elementSize;
     }
-    UINT desc_index = m_device->AllocateDescriptor(&buffer->cpu_desc);
-    device->CreateShaderResourceView(buffer->resource.Get(), &desc, buffer->cpu_desc);
-    buffer->gpu_desc = m_device->GetGPUDescriptorHandle(desc_index);
+    UINT desc_index = m_device->AllocateDescriptor(&buffer->cpu_handle);
+    device->CreateShaderResourceView(buffer->resource.Get(), &desc, buffer->cpu_handle);
+    buffer->gpu_handle = m_device->GetGPUDescriptorHandle(desc_index);
     return desc_index;
 }
 
@@ -741,7 +741,7 @@ void Renderer::BuildShaderTables()
             D3D12_GPU_DESCRIPTOR_HANDLE srv;
             CubeConstantBuffer cb;
         } arguments;
-        arguments.srv = m_texture_mesh->GetSrv();
+        arguments.srv = m_texture_mesh->GetGpuHandle();
         arguments.cb = m_cube_cb;
 
         UINT record_count = 1;

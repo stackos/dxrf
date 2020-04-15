@@ -64,10 +64,10 @@ namespace dxrf
             &desc,
             D3D12_RESOURCE_STATE_COPY_DEST,
             nullptr,
-            IID_PPV_ARGS(&texture->m_resource)));
+            IID_PPV_ARGS(&texture->m_texture.resource)));
 
         // Create the GPU upload buffer.
-        const UINT64 upload_size = GetRequiredIntermediateSize(texture->m_resource.Get(), 0, array_size);
+        const UINT64 upload_size = GetRequiredIntermediateSize(texture->m_texture.resource.Get(), 0, array_size);
 
         ComPtr<ID3D12Resource> upload_heap;
         ThrowIfFailed(d3d->CreateCommittedResource(
@@ -86,11 +86,10 @@ namespace dxrf
             datas[i].SlicePitch = datas[i].RowPitch * height;
         }
 
-        UpdateSubresources(cmd, texture->m_resource.Get(), upload_heap.Get(), 0, 0, array_size, &datas[0]);
-        cmd->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(texture->m_resource.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ));
+        UpdateSubresources(cmd, texture->m_texture.resource.Get(), upload_heap.Get(), 0, 0, array_size, &datas[0]);
+        cmd->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(texture->m_texture.resource.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ));
 
-        D3D12_CPU_DESCRIPTOR_HANDLE desc_handle;
-        texture->m_srv_index = device->AllocateDescriptor(&desc_handle);
+        texture->m_texture.heap_index = device->AllocateDescriptor(&texture->m_texture.cpu_handle);
 
         // Describe and create a SRV for the texture.
         D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = { };
@@ -105,8 +104,8 @@ namespace dxrf
         {
             srv_desc.Texture2D.MipLevels = mip_levels;
         }
-        d3d->CreateShaderResourceView(texture->m_resource.Get(), &srv_desc, desc_handle);
-        texture->m_srv = device->GetGPUDescriptorHandle(texture->m_srv_index);
+        d3d->CreateShaderResourceView(texture->m_texture.resource.Get(), &srv_desc, texture->m_texture.cpu_handle);
+        texture->m_texture.gpu_handle = device->GetGPUDescriptorHandle(texture->m_texture.heap_index);
 
         device->ExecuteCommandList();
         device->WaitForGpu();
@@ -116,7 +115,7 @@ namespace dxrf
 
     Texture::~Texture()
     {
-        m_resource.Reset();
-        m_device->ReleaseDescriptor(m_srv_index);
+        m_texture.resource.Reset();
+        m_device->ReleaseDescriptor(m_texture.heap_index);
     }
 }

@@ -20,15 +20,24 @@ copies or substantial portions of the Software.
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <fstream>
 
 using namespace DX;
 
 namespace dxrf
 {
+    struct D3DBuffer
+    {
+        ComPtr<ID3D12Resource> resource;
+        D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle = { };
+        D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle = { };
+        UINT heap_index = UINT_MAX;
+    };
+
     struct Submesh
     {
-        int index_first;
-        int index_count;
+        int index_first = -1;
+        int index_count = 0;
     };
 
     struct BlendShape
@@ -41,6 +50,7 @@ namespace dxrf
 
     struct Mesh
     {
+        int index = -1;
         std::string name;
         std::vector<XMFLOAT3> vertices;
         std::vector<XMFLOAT4> colors;
@@ -58,6 +68,8 @@ namespace dxrf
 
     struct MeshRenderer
     {
+        int mesh_index = -1;
+        std::string mesh_key;
         std::weak_ptr<Mesh> mesh;
     };
 
@@ -65,7 +77,7 @@ namespace dxrf
     {
         std::string name;
         XMMATRIX transform;
-        std::vector<std::unique_ptr<Object>> children;
+        std::vector<std::shared_ptr<Object>> children;
         std::unique_ptr<MeshRenderer> mesh_renderer;
     };
 
@@ -74,16 +86,22 @@ namespace dxrf
     public:
         static std::unique_ptr<Scene> LoadFromFile(DeviceResources* device, const std::string& data_dir, const std::string& local_path);
         ~Scene();
-        std::unordered_map<std::string, std::shared_ptr<Mesh>>& GetMeshes() { return m_meshes; }
+        std::unordered_map<std::string, std::shared_ptr<Mesh>>& GetMeshMap() { return m_mesh_map; }
+        std::vector<std::shared_ptr<Mesh>>& GetMeshArray() { return m_mesh_array; }
         const std::string& GetDataDir() const { return m_data_dir; }
 
     private:
         Scene() = default;
+        std::shared_ptr<Object> ReadObject(std::ifstream& is);
 
     private:
         DeviceResources* m_device;
         std::string m_data_dir;
-        std::unique_ptr<Object> m_obj;
-        std::unordered_map<std::string, std::shared_ptr<Mesh>> m_meshes;
+        std::shared_ptr<Object> m_root_object;
+        std::vector<std::shared_ptr<Object>> m_render_objects;
+        std::unordered_map<std::string, std::shared_ptr<Mesh>> m_mesh_map;
+        std::vector<std::shared_ptr<Mesh>> m_mesh_array;
+        D3DBuffer m_vertex_buffer;
+        D3DBuffer m_index_buffer;
     };
 }

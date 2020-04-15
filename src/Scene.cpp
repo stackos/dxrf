@@ -16,7 +16,6 @@ copies or substantial portions of the Software.
 
 #include "Scene.h"
 #include <DirectXMath.h>
-#include <fstream>
 
 namespace dxrf
 {
@@ -36,15 +35,17 @@ namespace dxrf
         return str;
     }
 
-    static std::weak_ptr<Mesh> ReadMesh(const std::string& path, std::unordered_map<std::string, std::shared_ptr<Mesh>>& meshes)
+    static std::weak_ptr<Mesh> ReadMesh(const std::string& path, std::unordered_map<std::string, std::shared_ptr<Mesh>>& mesh_map, std::vector<std::shared_ptr<Mesh>>& m_mesh_array)
     {
-        if (meshes.count(path) > 0)
+        if (mesh_map.count(path) > 0)
         {
-            return meshes[path];
+            return mesh_map[path];
         }
 
         std::shared_ptr<Mesh> mesh(new Mesh());
-        meshes[path] = mesh;
+        mesh->index = (int) m_mesh_array.size();
+        mesh_map[path] = mesh;
+        m_mesh_array.push_back(mesh);
 
         std::ifstream is(path, std::ios::binary | std::ios::in);
         if (is)
@@ -196,14 +197,19 @@ namespace dxrf
         std::string mesh_path = ReadString(is);
         if (mesh_path.size() > 0)
         {
-            renderer->mesh = ReadMesh(scene->GetDataDir() + "/" + mesh_path, scene->GetMeshes());
+            std::string path = scene->GetDataDir() + "/" + mesh_path;
+            renderer->mesh_key = path;
+            renderer->mesh = ReadMesh(path, scene->GetMeshMap(), scene->GetMeshArray());
+            renderer->mesh_index = renderer->mesh.lock()->index;
         }
         
         return renderer;
     }
 
-    static Object* ReadObject(std::ifstream& is, Scene* scene)
+    std::shared_ptr<Object> Scene::ReadObject(std::ifstream& is)
     {
+        std::shared_ptr<Object> obj(new Object());
+
         std::string name = ReadString(is);
         int layer = Read<int>(is);
         bool active = Read<uint8_t>(is) == 1;
@@ -211,7 +217,6 @@ namespace dxrf
         XMFLOAT4 local_rot = Read<XMFLOAT4>(is);
         XMFLOAT3 local_scale = Read<XMFLOAT3>(is);
 
-        Object* obj = new Object();
         obj->name = name;
         XMMATRIX scaling = XMMatrixScaling(local_scale.x, local_scale.y, local_scale.z);
         XMMATRIX rotation = XMMatrixRotationQuaternion(XMLoadFloat4(&local_rot));
@@ -225,7 +230,8 @@ namespace dxrf
 
             if (com_name == "MeshRenderer")
             {
-                obj->mesh_renderer = ReadMeshRenderer(is, scene);
+                obj->mesh_renderer = ReadMeshRenderer(is, this);
+                m_render_objects.push_back(obj);
             }
             else
             {
@@ -237,8 +243,10 @@ namespace dxrf
         obj->children.resize(child_count);
         for (int i = 0; i < child_count; ++i)
         {
-            Object* child = ReadObject(is, scene);
-            obj->children[i] = std::unique_ptr<Object>(child);
+            std::shared_ptr<Object> child = this->ReadObject(is);
+            // apply parent transform, convert local transform to world transform
+            child->transform = child->transform * obj->transform;
+            obj->children[i] = child;
         }
 
         return obj;
@@ -253,7 +261,7 @@ namespace dxrf
         std::ifstream is(data_dir + "/" + local_path, std::ios::binary | std::ios::in);
         if (is)
         {
-            scene->m_obj = std::unique_ptr<Object>(ReadObject(is, scene.get()));
+            scene->m_root_object = scene->ReadObject(is);
 
             is.close();
         }

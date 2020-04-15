@@ -25,10 +25,19 @@ namespace dxrf
 {
     class Texture
     {
+    private:
+        struct D3DTexture
+        {
+            ComPtr<ID3D12Resource> resource;
+            D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle = { };
+            D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle = { };
+            UINT heap_index = UINT_MAX;
+        };
+
     public:
         static std::unique_ptr<Texture> CreateTextureFromData(DeviceResources* device, int width, int height, DXGI_FORMAT format, bool cube, void** faces_data);
         ~Texture();
-        D3D12_GPU_DESCRIPTOR_HANDLE GetSrv() const { return m_srv; }
+        D3D12_GPU_DESCRIPTOR_HANDLE GetGpuHandle() const { return m_texture.gpu_handle; }
 
     private:
         Texture() = default;
@@ -38,8 +47,6 @@ namespace dxrf
         int m_width = 0;
         int m_height = 0;
         DXGI_FORMAT m_format = DXGI_FORMAT_UNKNOWN;
-        ComPtr<ID3D12Resource> m_resource;
-        D3D12_GPU_DESCRIPTOR_HANDLE m_srv = { };
-        UINT m_srv_index = UINT_MAX;
+        D3DTexture m_texture;
     };
 }
