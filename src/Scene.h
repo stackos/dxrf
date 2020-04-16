@@ -51,7 +51,8 @@ namespace dxrf
     struct Mesh
     {
         int index = -1;
-        size_t attribute_offset = 0;
+        size_t vertex_offset = 0;
+        size_t vertex_stride = 0;
         size_t index_offset = 0;
         std::string name;
         std::vector<XMFLOAT3> vertices;

@@ -39,4 +39,11 @@ struct Vertex
     XMFLOAT2 uv;
 };
 
+struct RayTraceMeshInfo
+{
+    UINT vertex_offset;
+    UINT vertex_stride;
+    UINT index_offset;
+};
+
 #endif // RAYTRACINGHLSLCOMPAT_H

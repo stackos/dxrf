@@ -288,7 +288,8 @@ namespace dxrf
         {
             auto& mesh = m_mesh_array[i];
 
-            mesh->attribute_offset = sizeof(XMFLOAT3) * vertices->size();
+            mesh->vertex_offset = sizeof(XMFLOAT3) * vertices->size();
+            mesh->vertex_stride = sizeof(XMFLOAT3) * 2;
             mesh->index_offset = sizeof(uint16_t) * indices->size();
 
             if (mesh->vertices.size() > 0)
