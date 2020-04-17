@@ -463,7 +463,7 @@ void Renderer::BuildGeometry()
     auto device = m_device->GetD3DDevice();
 
     // Cube vertices positions and corresponding triangle normals.
-    Vertex vertices[] =
+    std::vector<Vertex> vertices =
     {
         { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(0.0f, 1.0f) },
         { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(1.0f, 1.0f) },
@@ -495,6 +495,12 @@ void Renderer::BuildGeometry()
         { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(1.0f, 0.0f) },
         { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(0.0f, 0.0f) },
     };
+    vertices.resize(vertices.size() * 2);
+    for (size_t i = vertices.size() / 2; i < vertices.size(); ++i)
+    {
+        XMFLOAT3 pos = vertices[i - vertices.size() / 2].position;
+        vertices[i].position = XMFLOAT3(pos.x, pos.y + 2.5f, pos.z);
+    }
 
     // Cube indices.
     Index indices[] =
@@ -519,12 +525,12 @@ void Renderer::BuildGeometry()
     };
 
     AllocateUploadBuffer(device, indices, sizeof(indices), &m_index_buffer.resource);
-    AllocateUploadBuffer(device, vertices, sizeof(vertices), &m_vertex_buffer.resource);
+    AllocateUploadBuffer(device, &vertices[0], sizeof(Vertex) * vertices.size(), &m_vertex_buffer.resource);
 
     // Vertex buffer is passed to the shader along with index buffer as a descriptor table.
     // Vertex buffer descriptor must follow index buffer descriptor in the descriptor heap.
     UINT ib_index = this->CreateBufferSRV(&m_index_buffer, sizeof(indices) / 4, 0);
-    UINT vb_index = this->CreateBufferSRV(&m_vertex_buffer, ARRAYSIZE(vertices), sizeof(vertices[0]));
+    UINT vb_index = this->CreateBufferSRV(&m_vertex_buffer, (UINT) vertices.size(), sizeof(Vertex));
     ThrowIfFalse(vb_index == ib_index + 1, "Vertex Buffer descriptor index must follow that of Index Buffer descriptor index!");
 }
 
@@ -563,21 +569,25 @@ void Renderer::BuildAccelerationStructures()
     // Reset the command list for the acceleration structure construction.
     cmd->Reset(m_device->GetCommandAllocator(), nullptr);
 
-    D3D12_RAYTRACING_GEOMETRY_DESC geometry_desc = { };
-    geometry_desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-    geometry_desc.Triangles.IndexBuffer = m_index_buffer.resource->GetGPUVirtualAddress();
-    geometry_desc.Triangles.IndexCount = static_cast<UINT>(m_index_buffer.resource->GetDesc().Width) / sizeof(Index);
-    geometry_desc.Triangles.IndexFormat = DXGI_FORMAT_R16_UINT;
-    geometry_desc.Triangles.Transform3x4 = 0;
-    geometry_desc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
-    geometry_desc.Triangles.VertexCount = static_cast<UINT>(m_vertex_buffer.resource->GetDesc().Width) / sizeof(Vertex);
-    geometry_desc.Triangles.VertexBuffer.StartAddress = m_vertex_buffer.resource->GetGPUVirtualAddress();
-    geometry_desc.Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
+    std::vector<D3D12_RAYTRACING_GEOMETRY_DESC> geometry_descs(2);
+    for (size_t i = 0; i < geometry_descs.size(); ++i)
+    {
+        auto& geometry = geometry_descs[i];
+        geometry.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+        geometry.Triangles.IndexBuffer = m_index_buffer.resource->GetGPUVirtualAddress();
+        geometry.Triangles.IndexCount = static_cast<UINT>(m_index_buffer.resource->GetDesc().Width) / sizeof(Index);
+        geometry.Triangles.IndexFormat = DXGI_FORMAT_R16_UINT;
+        geometry.Triangles.Transform3x4 = 0;
+        geometry.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
+        geometry.Triangles.VertexCount = static_cast<UINT>(m_vertex_buffer.resource->GetDesc().Width) / sizeof(Vertex) / 2;
+        geometry.Triangles.VertexBuffer.StartAddress = m_vertex_buffer.resource->GetGPUVirtualAddress() + i * m_vertex_buffer.resource->GetDesc().Width / 2;
+        geometry.Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
 
-    // Mark the geometry as opaque. 
-    // PERFORMANCE TIP: mark geometry as opaque whenever applicable as it can enable important ray processing optimizations.
-    // Note: When rays encounter opaque geometry an any hit shader will not be executed whether it is present or not.
-    geometry_desc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+        // Mark the geometry as opaque. 
+        // PERFORMANCE TIP: mark geometry as opaque whenever applicable as it can enable important ray processing optimizations.
+        // Note: When rays encounter opaque geometry an any hit shader will not be executed whether it is present or not.
+        geometry.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+    }
 
     // Get required sizes for an acceleration structure.
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
@@ -586,8 +596,8 @@ void Renderer::BuildAccelerationStructures()
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS& bottom_inputs = bottom_level_desc.Inputs;
     bottom_inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
     bottom_inputs.Flags = build_flags;
-    bottom_inputs.NumDescs = 1;
-    bottom_inputs.pGeometryDescs = &geometry_desc;
+    bottom_inputs.NumDescs = (UINT) geometry_descs.size();
+    bottom_inputs.pGeometryDescs = &geometry_descs[0];
     bottom_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC top_level_desc = { };
@@ -632,7 +642,7 @@ void Renderer::BuildAccelerationStructures()
         instance.InstanceID = i;
         instance.InstanceMask = 1;
         instance.AccelerationStructure = m_bottom_structure->GetGPUVirtualAddress();
-        instance.InstanceContributionToHitGroupIndex = i;
+        instance.InstanceContributionToHitGroupIndex = i * 2;
     }
     instance_descs[1].Transform[0][3] = 2.5f;
     instance_descs[1].Transform[1][3] = 0;
@@ -745,20 +755,24 @@ void Renderer::BuildShaderTables()
         {
             MeshConstantBuffer mesh_cb;
             D3D12_GPU_DESCRIPTOR_HANDLE srv;
-        } arguments[2];
-        for (int i = 0; i < 2; ++i)
+        } arguments[4];
+        for (int i = 0; i < 4; ++i)
         {
             arguments[i].mesh_cb.mesh_index = i;
             arguments[i].mesh_cb.color = { 1, 1, 1, 1 };
             arguments[i].srv = m_texture_mesh->GetGpuHandle();
         }
-        arguments[1].mesh_cb.color = { 0, 1, 0, 1 };
+        arguments[1].mesh_cb.color = { 1, 0, 0, 1 };
+        arguments[2].mesh_cb.color = { 0, 1, 0, 1 };
+        arguments[3].mesh_cb.color = { 0, 0, 1, 1 };
 
-        UINT record_count = 2;
+        UINT record_count = 4;
         UINT record_size = shader_id_size + sizeof(RootArguments);
         ShaderTable hit_group_table(device, record_count, record_size, L"HitGroupShaderTable");
         hit_group_table.push_back(ShaderRecord(hit_group_id, shader_id_size, &arguments[0], sizeof(RootArguments)));
         hit_group_table.push_back(ShaderRecord(hit_group_id, shader_id_size, &arguments[1], sizeof(RootArguments)));
+        hit_group_table.push_back(ShaderRecord(hit_group_id, shader_id_size, &arguments[2], sizeof(RootArguments)));
+        hit_group_table.push_back(ShaderRecord(hit_group_id, shader_id_size, &arguments[3], sizeof(RootArguments)));
         m_hit_group_table = hit_group_table.GetResource();
         m_hit_group_stride = hit_group_table.GetShaderRecordSize();
     }
