@@ -68,7 +68,6 @@ private:
 
     // Raytracing scene
     SceneConstantBuffer m_scene_cb[BACK_BUFFER_COUNT] = { };
-    CubeConstantBuffer m_cube_cb = { };
     XMVECTOR m_eye = { };
     XMVECTOR m_at = { };
     XMVECTOR m_up = { };
@@ -92,10 +91,11 @@ private:
     ComPtr<ID3D12Resource> m_frame_cb;
 
     // Shader tables
+    ComPtr<ID3D12Resource> m_raygen_table;
     ComPtr<ID3D12Resource> m_miss_table;
     ComPtr<ID3D12Resource> m_hit_group_table;
-    ComPtr<ID3D12Resource> m_raygen_table;
-
+    uint64_t m_hit_group_stride = 0;
+   
     std::unique_ptr<Texture> m_texture_bg;
     std::unique_ptr<Texture> m_texture_mesh;
 

@@ -281,29 +281,30 @@ namespace dxrf
 
     void Scene::CreateGeometryBuffer()
     {
-        std::vector<XMFLOAT3>* vertices = new std::vector<XMFLOAT3>();
+        std::vector<Vertex>* vertices = new std::vector<Vertex>();
         std::vector<uint16_t>* indices = new std::vector<uint16_t>();
 
         for (int i = 0; i < m_mesh_array.size(); ++i)
         {
             auto& mesh = m_mesh_array[i];
 
-            mesh->vertex_offset = sizeof(XMFLOAT3) * vertices->size();
-            mesh->vertex_stride = sizeof(XMFLOAT3) * 2;
-            mesh->index_offset = sizeof(uint16_t) * indices->size();
+            mesh->vertex_buffer_offset = sizeof(Vertex) * vertices->size();
+            mesh->vertex_stride = sizeof(Vertex);
+            mesh->index_buffer_offset = sizeof(uint16_t) * indices->size();
 
-            if (mesh->vertices.size() > 0)
+            size_t vertex_count = mesh->vertices.size();
+            if (vertex_count > 0)
             {
                 size_t old_size = vertices->size();
-                vertices->resize(old_size + mesh->vertices.size());
-                memcpy(&vertices->at(old_size), &mesh->vertices[0], sizeof(XMFLOAT3) * mesh->vertices.size());
-            }
-            
-            if (mesh->normals.size() > 0)
-            {
-                size_t old_size = vertices->size();
-                vertices->resize(old_size + mesh->normals.size());
-                memcpy(&vertices->at(old_size), &mesh->normals[0], sizeof(XMFLOAT3) * mesh->normals.size());
+                vertices->resize(old_size + vertex_count);
+
+                for (int i = 0; i < vertex_count; ++i)
+                {
+                    Vertex v = { };
+                    v.position = mesh->vertices[i];
+                    v.normal = mesh->normals[i];
+                    vertices->at(old_size + i) = v;
+                }
             }
 
             if (mesh->indices.size() > 0)
@@ -314,10 +315,10 @@ namespace dxrf
             }
         }
 
-        AllocateUploadBuffer(m_device->GetD3DDevice(), &vertices->at(0), sizeof(XMFLOAT3) * vertices->size(), &m_vertex_buffer.resource);
+        AllocateUploadBuffer(m_device->GetD3DDevice(), &vertices->at(0), sizeof(Vertex) * vertices->size(), &m_vertex_buffer.resource);
         AllocateUploadBuffer(m_device->GetD3DDevice(), &indices->at(0), sizeof(uint16_t) * indices->size(), &m_index_buffer.resource);
 
-        this->CreateBufferView(&m_vertex_buffer, UINT(vertices->size() / 2), UINT(sizeof(XMFLOAT3) * 2)); // position + normal
+        this->CreateBufferView(&m_vertex_buffer, UINT(vertices->size()), UINT(sizeof(Vertex)));
         this->CreateBufferView(&m_index_buffer, UINT(indices->size() / 2), 0); // 2 uint16_t as 1 uint32_t element
 
         delete vertices;

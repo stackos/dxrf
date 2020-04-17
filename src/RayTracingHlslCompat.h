@@ -1,14 +1,3 @@
-//*********************************************************
-//
-// Copyright (c) Microsoft. All rights reserved.
-// This code is licensed under the MIT License (MIT).
-// THIS CODE IS PROVIDED *AS IS* WITHOUT WARRANTY OF
-// ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING ANY
-// IMPLIED WARRANTIES OF FITNESS FOR A PARTICULAR
-// PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT.
-//
-//*********************************************************
-
 #ifndef RAYTRACINGHLSLCOMPAT_H
 #define RAYTRACINGHLSLCOMPAT_H
 
@@ -27,9 +16,11 @@ struct SceneConstantBuffer
     XMVECTOR camera_position;
 };
 
-struct CubeConstantBuffer
+struct MeshConstantBuffer
 {
-    XMFLOAT4 albedo;
+    UINT mesh_index;
+    XMFLOAT3 padding;
+    XMFLOAT4 color;
 };
 
 struct Vertex
@@ -41,9 +32,9 @@ struct Vertex
 
 struct RayTraceMeshInfo
 {
-    UINT vertex_offset;
+    UINT vertex_buffer_offset;
     UINT vertex_stride;
-    UINT index_offset;
+    UINT index_buffer_offset;
 };
 
-#endif // RAYTRACINGHLSLCOMPAT_H
+#endif

@@ -17,6 +17,7 @@ copies or substantial portions of the Software.
 #pragma once
 
 #include "DeviceResources.h"
+#include "RaytracingHlslCompat.h"
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -51,9 +52,9 @@ namespace dxrf
     struct Mesh
     {
         int index = -1;
-        size_t vertex_offset = 0;
+        size_t vertex_buffer_offset = 0;
         size_t vertex_stride = 0;
-        size_t index_offset = 0;
+        size_t index_buffer_offset = 0;
         std::string name;
         std::vector<XMFLOAT3> vertices;
         std::vector<XMFLOAT4> colors;
@@ -89,9 +90,10 @@ namespace dxrf
     public:
         static std::unique_ptr<Scene> LoadFromFile(DeviceResources* device, const std::string& data_dir, const std::string& local_path);
         ~Scene();
+        const std::string& GetDataDir() const { return m_data_dir; }
         std::unordered_map<std::string, std::shared_ptr<Mesh>>& GetMeshMap() { return m_mesh_map; }
         std::vector<std::shared_ptr<Mesh>>& GetMeshArray() { return m_mesh_array; }
-        const std::string& GetDataDir() const { return m_data_dir; }
+        const std::vector<std::shared_ptr<Object>>& GetRenderObjects() const { return m_render_objects; }
 
     private:
         Scene() = default;

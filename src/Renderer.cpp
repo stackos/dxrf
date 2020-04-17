@@ -22,8 +22,8 @@ namespace LocalRootSignatureParams
 {
     enum Value
     {
-        TextureSlot = 0,
-        CubeConstantSlot,
+        MeshConstantSlot = 0,
+        TextureSlot,
         Count
     };
 }
@@ -137,8 +137,6 @@ void Renderer::InitializeScene()
 {
     auto frame_index = m_device->GetCurrentFrameIndex();
 
-    m_cube_cb.albedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-
     m_eye = { 4.0f, 2.0f, -4.0f, 1.0f };
     m_at = { 0.0f, 0.0f, 0.0f, 1.0f };
     m_up = { 0.0f, 1.0f, 0.0f, 1.0f };
@@ -220,9 +218,9 @@ void Renderer::ReleaseDeviceDependentResources()
     m_texture_bg.reset();
     m_texture_mesh.reset();
 
+    m_raygen_table.Reset();
     m_miss_table.Reset();
     m_hit_group_table.Reset();
-    m_raygen_table.Reset();
 
     m_frame_cb.Reset();
 
@@ -285,7 +283,7 @@ void Renderer::DoRaytracing()
         // Since each shader table has only one shader record, the stride is same as the size.
         desc->HitGroupTable.StartAddress = m_hit_group_table->GetGPUVirtualAddress();
         desc->HitGroupTable.SizeInBytes = m_hit_group_table->GetDesc().Width;
-        desc->HitGroupTable.StrideInBytes = desc->HitGroupTable.SizeInBytes;
+        desc->HitGroupTable.StrideInBytes = m_hit_group_stride;
         desc->MissShaderTable.StartAddress = m_miss_table->GetGPUVirtualAddress();
         desc->MissShaderTable.SizeInBytes = m_miss_table->GetDesc().Width;
         desc->MissShaderTable.StrideInBytes = desc->MissShaderTable.SizeInBytes;
@@ -380,8 +378,8 @@ void Renderer::CreateRootSignatures()
         ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4); // material texture
 
         CD3DX12_ROOT_PARAMETER parameters[LocalRootSignatureParams::Count];
+        parameters[LocalRootSignatureParams::MeshConstantSlot].InitAsConstants(SizeOfInUint32(MeshConstantBuffer), 1);
         parameters[LocalRootSignatureParams::TextureSlot].InitAsDescriptorTable(1, &ranges[0]);
-        parameters[LocalRootSignatureParams::CubeConstantSlot].InitAsConstants(SizeOfInUint32(m_cube_cb), 1);
         CD3DX12_ROOT_SIGNATURE_DESC desc(ARRAYSIZE(parameters), parameters);
         desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
         this->SerializeAndCreateRaytracingRootSignature(desc, &m_raytracing_local_sig);
@@ -586,19 +584,17 @@ void Renderer::BuildAccelerationStructures()
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC bottom_level_desc = { };
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS& bottom_inputs = bottom_level_desc.Inputs;
-    bottom_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+    bottom_inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
     bottom_inputs.Flags = build_flags;
     bottom_inputs.NumDescs = 1;
-    bottom_inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
     bottom_inputs.pGeometryDescs = &geometry_desc;
+    bottom_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC top_level_desc = { };
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS& top_inputs = top_level_desc.Inputs;
-    top_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-    top_inputs.Flags = build_flags;
-    top_inputs.NumDescs = 1;
     top_inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
-    top_inputs.pGeometryDescs = nullptr;
+    top_inputs.Flags = build_flags;
+    top_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
 
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO bottom_info = { };
     m_dxr_device->GetRaytracingAccelerationStructurePrebuildInfo(&bottom_inputs, &bottom_info);
@@ -626,12 +622,23 @@ void Renderer::BuildAccelerationStructures()
     }
 
     // Create an instance desc for the bottom-level acceleration structure.
-    ComPtr<ID3D12Resource> instance_descs;
-    D3D12_RAYTRACING_INSTANCE_DESC instance_desc = { };
-    instance_desc.Transform[0][0] = instance_desc.Transform[1][1] = instance_desc.Transform[2][2] = 1;
-    instance_desc.InstanceMask = 1;
-    instance_desc.AccelerationStructure = m_bottom_structure->GetGPUVirtualAddress();
-    AllocateUploadBuffer(device, &instance_desc, sizeof(instance_desc), &instance_descs, L"InstanceDescs");
+    ComPtr<ID3D12Resource> instance_desc_buffer;
+    std::vector<D3D12_RAYTRACING_INSTANCE_DESC> instance_descs(2);
+    for (int i = 0; i < instance_descs.size(); ++i)
+    {
+        auto& instance = instance_descs[i];
+        instance.Transform[0][0] = instance.Transform[1][1] = instance.Transform[2][2] = 1;
+        
+        instance.InstanceID = i;
+        instance.InstanceMask = 1;
+        instance.AccelerationStructure = m_bottom_structure->GetGPUVirtualAddress();
+        instance.InstanceContributionToHitGroupIndex = i;
+    }
+    instance_descs[1].Transform[0][3] = 2.5f;
+    instance_descs[1].Transform[1][3] = 0;
+    instance_descs[1].Transform[2][3] = 0;
+    
+    AllocateUploadBuffer(device, &instance_descs[0], sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * instance_descs.size(), &instance_desc_buffer, L"InstanceDescs");
 
     // Bottom Level Acceleration Structure desc
     {
@@ -643,7 +650,8 @@ void Renderer::BuildAccelerationStructures()
     {
         top_level_desc.ScratchAccelerationStructureData = scratch_resource->GetGPUVirtualAddress();
         top_level_desc.DestAccelerationStructureData = m_top_structure->GetGPUVirtualAddress();
-        top_level_desc.Inputs.InstanceDescs = instance_descs->GetGPUVirtualAddress();
+        top_level_desc.Inputs.NumDescs = 2;
+        top_level_desc.Inputs.InstanceDescs = instance_desc_buffer->GetGPUVirtualAddress();
     }
 
     auto BuildAccelerationStructure = [&](auto* dxr_cmd)
@@ -735,16 +743,23 @@ void Renderer::BuildShaderTables()
     {
         struct RootArguments
         {
+            MeshConstantBuffer mesh_cb;
             D3D12_GPU_DESCRIPTOR_HANDLE srv;
-            CubeConstantBuffer cb;
-        } arguments;
-        arguments.srv = m_texture_mesh->GetGpuHandle();
-        arguments.cb = m_cube_cb;
+        } arguments[2];
+        for (int i = 0; i < 2; ++i)
+        {
+            arguments[i].mesh_cb.mesh_index = i;
+            arguments[i].mesh_cb.color = { 1, 1, 1, 1 };
+            arguments[i].srv = m_texture_mesh->GetGpuHandle();
+        }
+        arguments[1].mesh_cb.color = { 0, 1, 0, 1 };
 
-        UINT record_count = 1;
-        UINT record_size = shader_id_size + sizeof(arguments);
+        UINT record_count = 2;
+        UINT record_size = shader_id_size + sizeof(RootArguments);
         ShaderTable hit_group_table(device, record_count, record_size, L"HitGroupShaderTable");
-        hit_group_table.push_back(ShaderRecord(hit_group_id, shader_id_size, &arguments, sizeof(arguments)));
+        hit_group_table.push_back(ShaderRecord(hit_group_id, shader_id_size, &arguments[0], sizeof(RootArguments)));
+        hit_group_table.push_back(ShaderRecord(hit_group_id, shader_id_size, &arguments[1], sizeof(RootArguments)));
         m_hit_group_table = hit_group_table.GetResource();
+        m_hit_group_stride = hit_group_table.GetShaderRecordSize();
     }
 }

@@ -10,7 +10,7 @@ ByteAddressBuffer Indices : register(t1, space0);
 StructuredBuffer<Vertex> Vertices : register(t2, space0);
 
 ConstantBuffer<SceneConstantBuffer> g_scene : register(b0);
-ConstantBuffer<CubeConstantBuffer> g_cube : register(b1);
+ConstantBuffer<MeshConstantBuffer> g_mesh : register(b1);
 TextureCube<float4> g_texture_global : register(t3);
 Texture2D<float4> g_texture_local : register(t4);
 SamplerState g_sampler : register(s0);
@@ -137,7 +137,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     };
     Vertex vertex = HitVertex(vertices, attr);
 
-    float4 color = g_cube.albedo * g_texture_local.SampleLevel(g_sampler, vertex.uv, 0);
+    float4 color = g_mesh.color * g_texture_local.SampleLevel(g_sampler, vertex.uv, 0);
 
     payload.color = color;
 }
