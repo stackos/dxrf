@@ -13,6 +13,7 @@ namespace GlobalRootSignatureParams
         AccelerationStructureSlot,
         SceneConstantSlot,
         VertexBuffersSlot,
+        IndexBuffersSlot,
         TextureSlot,
         Count
     };
@@ -95,15 +96,6 @@ void Renderer::OnSizeChanged(int width, int height, bool minimized)
 
 void Renderer::Update()
 {
-    m_eye = { 4.0f, 2.0f, -4.0f, 1.0f };
-    m_at = { 0.0f, 0.0f, 0.0f, 1.0f };
-    m_up = { 0.0f, 1.0f, 0.0f, 1.0f };
-
-    static float deg = 0.0f;
-    deg += 0.01f;
-    XMMATRIX rot = XMMatrixRotationAxis({ 0.0f, 1.0f, 0.0 }, deg);
-    m_eye = XMVector4Transform(m_eye, rot);
-
     this->UpdateCameraMatrices();
 }
 
@@ -137,7 +129,7 @@ void Renderer::InitializeScene()
 {
     auto frame_index = m_device->GetCurrentFrameIndex();
 
-    m_eye = { 4.0f, 2.0f, -4.0f, 1.0f };
+    m_eye = { -5.5f, 5.12f, -6.0f, 1.0f };
     m_at = { 0.0f, 0.0f, 0.0f, 1.0f };
     m_up = { 0.0f, 1.0f, 0.0f, 1.0f };
 
@@ -155,7 +147,7 @@ void Renderer::UpdateCameraMatrices()
 
     float fov = 45.0f;
     XMMATRIX view = XMMatrixLookAtLH(m_eye, m_at, m_up);
-    XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(fov), m_aspect, 1.0f, 125.0f);
+    XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(fov), m_aspect, 0.01f, 1000.0f);
     XMMATRIX view_proj = view * proj;
 
     m_scene_cb[frame_index].camera_position = m_eye;
@@ -198,11 +190,8 @@ void Renderer::CreateDeviceDependentResources()
     }
 
     this->CreateRootSignatures();
-    this->CreateRaytracingInterfaces();
     this->CreateRaytracingPipelineStateObject();
     this->LoadScene();
-    this->BuildGeometry();
-    this->BuildAccelerationStructures();
     this->CreateConstantBuffers();
     this->BuildShaderTables();
 }
@@ -224,21 +213,8 @@ void Renderer::ReleaseDeviceDependentResources()
 
     m_frame_cb.Reset();
 
-    m_bottom_structure.Reset();
-    m_top_structure.Reset();
-
-    m_index_buffer.resource.Reset();
-    m_vertex_buffer.resource.Reset();
-
-    m_device->ReleaseDescriptor(m_index_buffer.heap_index);
-    m_index_buffer.heap_index = UINT_MAX;
-    m_device->ReleaseDescriptor(m_vertex_buffer.heap_index);
-    m_vertex_buffer.heap_index = UINT_MAX;
-
     m_scene.reset();
 
-    m_dxr_device.Reset();
-    m_dxr_cmd.Reset();
     m_dxr_state.Reset();
 
     m_raytracing_global_sig.Reset();
@@ -301,7 +277,8 @@ void Renderer::DoRaytracing()
         auto descriptor_heap = m_device->GetDescriptorHeap();
         desc_cmd->SetDescriptorHeaps(1, &descriptor_heap);
         // Set index and successive vertex buffer decriptor tables
-        cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::VertexBuffersSlot, m_index_buffer.gpu_handle);
+        cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::VertexBuffersSlot, m_scene->GetVertexBuffer().gpu_handle);
+        cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::IndexBuffersSlot, m_scene->GetIndexBuffer().gpu_handle);
         cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::OutputViewSlot, m_raytracing_output_descriptor);
         cmd->SetComputeRootDescriptorTable(GlobalRootSignatureParams::TextureSlot, m_texture_bg->GetGpuHandle());
     };
@@ -316,8 +293,8 @@ void Renderer::DoRaytracing()
     // Bind the heaps, acceleration structure and dispatch rays.
     D3D12_DISPATCH_RAYS_DESC dispatch_sesc = { };
     SetCommonPipelineState(cmd);
-    cmd->SetComputeRootShaderResourceView(GlobalRootSignatureParams::AccelerationStructureSlot, m_top_structure->GetGPUVirtualAddress());
-    DispatchRays(m_dxr_cmd.Get(), m_dxr_state.Get(), &dispatch_sesc);
+    cmd->SetComputeRootShaderResourceView(GlobalRootSignatureParams::AccelerationStructureSlot, m_scene->GetTopLevelStructure()->GetGPUVirtualAddress());
+    DispatchRays(m_device->GetDXRCommandList(), m_dxr_state.Get(), &dispatch_sesc);
 }
 
 void Renderer::CopyRaytracingOutputToBackbuffer()
@@ -358,17 +335,19 @@ void Renderer::CreateRootSignatures()
         sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
         sampler.ShaderRegister = 0;
 
-        CD3DX12_DESCRIPTOR_RANGE ranges[3]; // Perfomance TIP: Order from most frequent to least frequent.
-        ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);  // 1 output texture
-        ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 1);  // 2 static index and vertex buffers.
-        ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);  // 3 material texture
+        CD3DX12_DESCRIPTOR_RANGE ranges[4]; // Perfomance TIP: Order from most frequent to least frequent.
+        ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);  // output texture
+        ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);  // vertex buffers
+        ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);  // index buffers
+        ranges[3].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);  // material texture
 
         CD3DX12_ROOT_PARAMETER parameters[GlobalRootSignatureParams::Count];
-        parameters[GlobalRootSignatureParams::OutputViewSlot].InitAsDescriptorTable(1, &ranges[0]);
-        parameters[GlobalRootSignatureParams::AccelerationStructureSlot].InitAsShaderResourceView(0);
-        parameters[GlobalRootSignatureParams::SceneConstantSlot].InitAsConstantBufferView(0);
-        parameters[GlobalRootSignatureParams::VertexBuffersSlot].InitAsDescriptorTable(1, &ranges[1]);
-        parameters[GlobalRootSignatureParams::TextureSlot].InitAsDescriptorTable(1, &ranges[2]);
+        parameters[GlobalRootSignatureParams::OutputViewSlot].InitAsDescriptorTable(1, &ranges[0]); // u0
+        parameters[GlobalRootSignatureParams::AccelerationStructureSlot].InitAsShaderResourceView(0); // t0
+        parameters[GlobalRootSignatureParams::SceneConstantSlot].InitAsConstantBufferView(0); // b0
+        parameters[GlobalRootSignatureParams::VertexBuffersSlot].InitAsDescriptorTable(1, &ranges[1]); // t1
+        parameters[GlobalRootSignatureParams::IndexBuffersSlot].InitAsDescriptorTable(1, &ranges[2]); // t2
+        parameters[GlobalRootSignatureParams::TextureSlot].InitAsDescriptorTable(1, &ranges[3]); // t3
         CD3DX12_ROOT_SIGNATURE_DESC desc(ARRAYSIZE(parameters), parameters, 1, &sampler);
         this->SerializeAndCreateRaytracingRootSignature(desc, &m_raytracing_global_sig);
     }
@@ -378,8 +357,8 @@ void Renderer::CreateRootSignatures()
         ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4); // material texture
 
         CD3DX12_ROOT_PARAMETER parameters[LocalRootSignatureParams::Count];
-        parameters[LocalRootSignatureParams::MeshConstantSlot].InitAsConstants(SizeOfInUint32(MeshConstantBuffer), 1);
-        parameters[LocalRootSignatureParams::TextureSlot].InitAsDescriptorTable(1, &ranges[0]);
+        parameters[LocalRootSignatureParams::MeshConstantSlot].InitAsConstants(SizeOfInUint32(MeshConstantBuffer), 1); // b1
+        parameters[LocalRootSignatureParams::TextureSlot].InitAsDescriptorTable(1, &ranges[0]); // t4
         CD3DX12_ROOT_SIGNATURE_DESC desc(ARRAYSIZE(parameters), parameters);
         desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
         this->SerializeAndCreateRaytracingRootSignature(desc, &m_raytracing_local_sig);
@@ -394,15 +373,6 @@ void Renderer::SerializeAndCreateRaytracingRootSignature(D3D12_ROOT_SIGNATURE_DE
     ComPtr<ID3DBlob> error;
     ThrowIfFailed(D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error), "D3D12SerializeRootSignature failed");
     ThrowIfFailed(device->CreateRootSignature(1, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&(*sig))));
-}
-
-void Renderer::CreateRaytracingInterfaces()
-{
-    auto device = m_device->GetD3DDevice();
-    auto cmd = m_device->GetCommandList();
-
-    ThrowIfFailed(device->QueryInterface(IID_PPV_ARGS(&m_dxr_device)), "Couldn't get DirectX Raytracing interface for the device.\n");
-    ThrowIfFailed(cmd->QueryInterface(IID_PPV_ARGS(&m_dxr_cmd)), "Couldn't get DirectX Raytracing interface for the command list.\n");
 }
 
 void Renderer::CreateRaytracingPipelineStateObject()
@@ -447,7 +417,7 @@ void Renderer::CreateRaytracingPipelineStateObject()
     PrintStateObjectDesc(pipeline);
 #endif
 
-    ThrowIfFailed(m_dxr_device->CreateStateObject(pipeline, IID_PPV_ARGS(&m_dxr_state)), "Couldn't create DirectX Raytracing state object.\n");
+    ThrowIfFailed(m_device->GetDXRDevice()->CreateStateObject(pipeline, IID_PPV_ARGS(&m_dxr_state)), "Couldn't create DirectX Raytracing state object.\n");
 }
 
 void Renderer::LoadScene()
@@ -456,229 +426,6 @@ void Renderer::LoadScene()
     sprintf(data_dir, "%s/assets/scene", m_work_dir);
 
     m_scene = Scene::LoadFromFile(m_device.get(), data_dir, "objects.go");
-}
-
-void Renderer::BuildGeometry()
-{
-    auto device = m_device->GetD3DDevice();
-
-    // Cube vertices positions and corresponding triangle normals.
-    std::vector<Vertex> vertices =
-    {
-        { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(0.0f, 1.0f) },
-        { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(1.0f, 1.0f) },
-        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(1.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(0.0f, 0.0f) },
-
-        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(0.0f, 1.0f) },
-        { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(1.0f, 1.0f) },
-        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(1.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT2(0.0f, 0.0f) },
-
-        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(0.0f, 1.0f) },
-        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(1.0f, 1.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(1.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT2(0.0f, 0.0f) },
-
-        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(0.0f, 1.0f) },
-        { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(1.0f, 1.0f) },
-        { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(1.0f, 0.0f) },
-        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT2(0.0f, 0.0f) },
-
-        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT2(0.0f, 1.0f) },
-        { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT2(1.0f, 1.0f) },
-        { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT2(1.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT2(0.0f, 0.0f) },
-
-        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(0.0f, 1.0f) },
-        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(1.0f, 1.0f) },
-        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(1.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(0.0f, 0.0f) },
-    };
-    vertices.resize(vertices.size() * 2);
-    for (size_t i = vertices.size() / 2; i < vertices.size(); ++i)
-    {
-        XMFLOAT3 pos = vertices[i - vertices.size() / 2].position;
-        vertices[i].position = XMFLOAT3(pos.x, pos.y + 2.5f, pos.z);
-    }
-
-    // Cube indices.
-    Index indices[] =
-    {
-        3, 1, 0,
-        2, 1, 3,
-
-        6, 4, 5,
-        7, 4, 6,
-
-        11, 9, 8,
-        10, 9, 11,
-
-        14, 12, 13,
-        15, 12, 14,
-
-        19, 17, 16,
-        18, 17, 19,
-
-        22, 20, 21,
-        23, 20, 22
-    };
-
-    AllocateUploadBuffer(device, indices, sizeof(indices), &m_index_buffer.resource);
-    AllocateUploadBuffer(device, &vertices[0], sizeof(Vertex) * vertices.size(), &m_vertex_buffer.resource);
-
-    // Vertex buffer is passed to the shader along with index buffer as a descriptor table.
-    // Vertex buffer descriptor must follow index buffer descriptor in the descriptor heap.
-    UINT ib_index = this->CreateBufferSRV(&m_index_buffer, sizeof(indices) / 4, 0);
-    UINT vb_index = this->CreateBufferSRV(&m_vertex_buffer, (UINT) vertices.size(), sizeof(Vertex));
-    ThrowIfFalse(vb_index == ib_index + 1, "Vertex Buffer descriptor index must follow that of Index Buffer descriptor index!");
-}
-
-UINT Renderer::CreateBufferSRV(D3DBuffer* buffer, UINT numElements, UINT elementSize)
-{
-    auto device = m_device->GetD3DDevice();
-
-    // SRV
-    D3D12_SHADER_RESOURCE_VIEW_DESC desc = {};
-    desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-    desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    desc.Buffer.NumElements = numElements;
-    if (elementSize == 0)
-    {
-        desc.Format = DXGI_FORMAT_R32_TYPELESS;
-        desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
-        desc.Buffer.StructureByteStride = 0;
-    }
-    else
-    {
-        desc.Format = DXGI_FORMAT_UNKNOWN;
-        desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-        desc.Buffer.StructureByteStride = elementSize;
-    }
-    buffer->heap_index = m_device->AllocateDescriptor(&buffer->cpu_handle);
-    device->CreateShaderResourceView(buffer->resource.Get(), &desc, buffer->cpu_handle);
-    buffer->gpu_handle = m_device->GetGPUDescriptorHandle(buffer->heap_index);
-    return buffer->heap_index;
-}
-
-void Renderer::BuildAccelerationStructures()
-{
-    auto device = m_device->GetD3DDevice();
-    auto cmd = m_device->GetCommandList();
-
-    // Reset the command list for the acceleration structure construction.
-    cmd->Reset(m_device->GetCommandAllocator(), nullptr);
-
-    std::vector<D3D12_RAYTRACING_GEOMETRY_DESC> geometry_descs(2);
-    for (size_t i = 0; i < geometry_descs.size(); ++i)
-    {
-        auto& geometry = geometry_descs[i];
-        geometry.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-        geometry.Triangles.IndexBuffer = m_index_buffer.resource->GetGPUVirtualAddress();
-        geometry.Triangles.IndexCount = static_cast<UINT>(m_index_buffer.resource->GetDesc().Width) / sizeof(Index);
-        geometry.Triangles.IndexFormat = DXGI_FORMAT_R16_UINT;
-        geometry.Triangles.Transform3x4 = 0;
-        geometry.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
-        geometry.Triangles.VertexCount = static_cast<UINT>(m_vertex_buffer.resource->GetDesc().Width) / sizeof(Vertex) / 2;
-        geometry.Triangles.VertexBuffer.StartAddress = m_vertex_buffer.resource->GetGPUVirtualAddress() + i * m_vertex_buffer.resource->GetDesc().Width / 2;
-        geometry.Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
-
-        // Mark the geometry as opaque. 
-        // PERFORMANCE TIP: mark geometry as opaque whenever applicable as it can enable important ray processing optimizations.
-        // Note: When rays encounter opaque geometry an any hit shader will not be executed whether it is present or not.
-        geometry.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
-    }
-
-    // Get required sizes for an acceleration structure.
-    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
-
-    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC bottom_level_desc = { };
-    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS& bottom_inputs = bottom_level_desc.Inputs;
-    bottom_inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
-    bottom_inputs.Flags = build_flags;
-    bottom_inputs.NumDescs = (UINT) geometry_descs.size();
-    bottom_inputs.pGeometryDescs = &geometry_descs[0];
-    bottom_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-
-    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC top_level_desc = { };
-    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS& top_inputs = top_level_desc.Inputs;
-    top_inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
-    top_inputs.Flags = build_flags;
-    top_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-
-    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO bottom_info = { };
-    m_dxr_device->GetRaytracingAccelerationStructurePrebuildInfo(&bottom_inputs, &bottom_info);
-    ThrowIfFalse(bottom_info.ResultDataMaxSizeInBytes > 0);
-
-    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO top_info = { };
-    m_dxr_device->GetRaytracingAccelerationStructurePrebuildInfo(&top_inputs, &top_info);
-    ThrowIfFalse(top_info.ResultDataMaxSizeInBytes > 0);
-
-    ComPtr<ID3D12Resource> scratch_resource;
-    AllocateUAVBuffer(device, max(top_info.ScratchDataSizeInBytes, bottom_info.ScratchDataSizeInBytes), &scratch_resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, L"ScratchResource");
-
-    // Allocate resources for acceleration structures.
-    // Acceleration structures can only be placed in resources that are created in the default heap (or custom heap equivalent). 
-    // Default heap is OK since the application doesn’t need CPU read/write access to them. 
-    // The resources that will contain acceleration structures must be created in the state D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, 
-    // and must have resource flag D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS. The ALLOW_UNORDERED_ACCESS requirement simply acknowledges both: 
-    //  - the system will be doing this type of access in its implementation of acceleration structure builds behind the scenes.
-    //  - from the app point of view, synchronization of writes/reads to acceleration structures is accomplished using UAV barriers.
-    {
-        D3D12_RESOURCE_STATES init_state = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
-
-        AllocateUAVBuffer(device, bottom_info.ResultDataMaxSizeInBytes, &m_bottom_structure, init_state, L"BottomLevelAccelerationStructure");
-        AllocateUAVBuffer(device, top_info.ResultDataMaxSizeInBytes, &m_top_structure, init_state, L"TopLevelAccelerationStructure");
-    }
-
-    // Create an instance desc for the bottom-level acceleration structure.
-    ComPtr<ID3D12Resource> instance_desc_buffer;
-    std::vector<D3D12_RAYTRACING_INSTANCE_DESC> instance_descs(2);
-    for (int i = 0; i < instance_descs.size(); ++i)
-    {
-        auto& instance = instance_descs[i];
-        instance.Transform[0][0] = instance.Transform[1][1] = instance.Transform[2][2] = 1;
-        
-        instance.InstanceID = i;
-        instance.InstanceMask = 1;
-        instance.AccelerationStructure = m_bottom_structure->GetGPUVirtualAddress();
-        instance.InstanceContributionToHitGroupIndex = i * 2;
-    }
-    instance_descs[1].Transform[0][3] = 2.5f;
-    instance_descs[1].Transform[1][3] = 0;
-    instance_descs[1].Transform[2][3] = 0;
-    
-    AllocateUploadBuffer(device, &instance_descs[0], sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * instance_descs.size(), &instance_desc_buffer, L"InstanceDescs");
-
-    // Bottom Level Acceleration Structure desc
-    {
-        bottom_level_desc.ScratchAccelerationStructureData = scratch_resource->GetGPUVirtualAddress();
-        bottom_level_desc.DestAccelerationStructureData = m_bottom_structure->GetGPUVirtualAddress();
-    }
-
-    // Top Level Acceleration Structure desc
-    {
-        top_level_desc.ScratchAccelerationStructureData = scratch_resource->GetGPUVirtualAddress();
-        top_level_desc.DestAccelerationStructureData = m_top_structure->GetGPUVirtualAddress();
-        top_level_desc.Inputs.NumDescs = 2;
-        top_level_desc.Inputs.InstanceDescs = instance_desc_buffer->GetGPUVirtualAddress();
-    }
-
-    auto BuildAccelerationStructure = [&](auto* dxr_cmd)
-    {
-        dxr_cmd->BuildRaytracingAccelerationStructure(&bottom_level_desc, 0, nullptr);
-        cmd->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(m_bottom_structure.Get()));
-        dxr_cmd->BuildRaytracingAccelerationStructure(&top_level_desc, 0, nullptr);
-    };
-
-    // Build acceleration structure.
-    BuildAccelerationStructure(m_dxr_cmd.Get());
-
-    // Kick off acceleration structure construction.
-    m_device->ExecuteCommandList();
-
-    // Wait for GPU to finish as the locally created temporary GPU resources will get released once we go out of scope.
-    m_device->WaitForGpu();
 }
 
 void Renderer::CreateConstantBuffers()
@@ -755,24 +502,30 @@ void Renderer::BuildShaderTables()
         {
             MeshConstantBuffer mesh_cb;
             D3D12_GPU_DESCRIPTOR_HANDLE srv;
-        } arguments[4];
-        for (int i = 0; i < 4; ++i)
+        };
+        const auto& meshes = m_scene->GetMeshArray();
+        std::vector<RootArguments> arguments(meshes.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
-            arguments[i].mesh_cb.mesh_index = i;
+            arguments[i].mesh_cb.mesh_index = (UINT) i;
+            arguments[i].mesh_cb.vertex_buffer_offset = (UINT) meshes[i]->vertex_buffer_offset;
+            arguments[i].mesh_cb.vertex_stride = sizeof(Vertex);
+            arguments[i].mesh_cb.index_buffer_offset = (UINT) meshes[i]->index_buffer_offset;
             arguments[i].mesh_cb.color = { 1, 1, 1, 1 };
             arguments[i].srv = m_texture_mesh->GetGpuHandle();
         }
         arguments[1].mesh_cb.color = { 1, 0, 0, 1 };
         arguments[2].mesh_cb.color = { 0, 1, 0, 1 };
         arguments[3].mesh_cb.color = { 0, 0, 1, 1 };
+        arguments[4].mesh_cb.color = { 1, 1, 0, 1 };
 
-        UINT record_count = 4;
+        UINT record_count = (UINT) arguments.size();
         UINT record_size = shader_id_size + sizeof(RootArguments);
         ShaderTable hit_group_table(device, record_count, record_size, L"HitGroupShaderTable");
-        hit_group_table.push_back(ShaderRecord(hit_group_id, shader_id_size, &arguments[0], sizeof(RootArguments)));
-        hit_group_table.push_back(ShaderRecord(hit_group_id, shader_id_size, &arguments[1], sizeof(RootArguments)));
-        hit_group_table.push_back(ShaderRecord(hit_group_id, shader_id_size, &arguments[2], sizeof(RootArguments)));
-        hit_group_table.push_back(ShaderRecord(hit_group_id, shader_id_size, &arguments[3], sizeof(RootArguments)));
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            hit_group_table.push_back(ShaderRecord(hit_group_id, shader_id_size, &arguments[i], sizeof(RootArguments)));
+        }
         m_hit_group_table = hit_group_table.GetResource();
         m_hit_group_stride = hit_group_table.GetShaderRecordSize();
     }

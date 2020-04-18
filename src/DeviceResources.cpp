@@ -238,6 +238,9 @@ void DeviceResources::CreateDeviceResources()
     NAME_D3D12_OBJECT(m_descriptor_heap);
     m_descriptor_increment_size = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     m_descriptors_allocated.resize(NumDescriptors, false);
+
+    ThrowIfFailed(m_d3dDevice->QueryInterface(IID_PPV_ARGS(&m_dxr_device)), "Couldn't get DirectX Raytracing interface for the device.\n");
+    ThrowIfFailed(m_commandList->QueryInterface(IID_PPV_ARGS(&m_dxr_cmd)), "Couldn't get DirectX Raytracing interface for the command list.\n");
 }
 
 // These resources need to be recreated every time the window size is changed.
@@ -482,6 +485,9 @@ bool DeviceResources::WindowSizeChanged(int width, int height, bool minimized)
 // Recreate all device resources and set them back to the current state.
 void DeviceResources::HandleDeviceLost()
 {
+    m_dxr_device.Reset();
+    m_dxr_cmd.Reset();
+
     m_descriptor_heap.Reset();
     m_descriptors_allocated.clear();
     m_descriptor_increment_size = UINT_MAX;

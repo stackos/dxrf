@@ -53,7 +53,6 @@ namespace dxrf
     {
         int index = -1;
         size_t vertex_buffer_offset = 0;
-        size_t vertex_stride = 0;
         size_t index_buffer_offset = 0;
         std::string name;
         std::vector<XMFLOAT3> vertices;
@@ -94,12 +93,16 @@ namespace dxrf
         std::unordered_map<std::string, std::shared_ptr<Mesh>>& GetMeshMap() { return m_mesh_map; }
         std::vector<std::shared_ptr<Mesh>>& GetMeshArray() { return m_mesh_array; }
         const std::vector<std::shared_ptr<Object>>& GetRenderObjects() const { return m_render_objects; }
+        const D3DBuffer& GetVertexBuffer() const { return m_vertex_buffer; }
+        const D3DBuffer& GetIndexBuffer() const { return m_index_buffer; }
+        ID3D12Resource* GetTopLevelStructure() { return m_top_structure.Get(); }
 
     private:
         Scene() = default;
         std::shared_ptr<Object> ReadObject(std::ifstream& is);
         void CreateGeometryBuffer();
         void CreateBufferView(D3DBuffer* buffer, UINT num_elements, UINT element_size);
+        void CreateAccelerationStructures();
 
     private:
         DeviceResources* m_device;
@@ -110,5 +113,7 @@ namespace dxrf
         std::vector<std::shared_ptr<Mesh>> m_mesh_array;
         D3DBuffer m_vertex_buffer;
         D3DBuffer m_index_buffer;
+        std::vector<ComPtr<ID3D12Resource>> m_bottom_structures;
+        ComPtr<ID3D12Resource> m_top_structure;
     };
 }

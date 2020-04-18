@@ -6,8 +6,8 @@
 
 RaytracingAccelerationStructure Scene : register(t0, space0);
 RWTexture2D<float4> RenderTarget : register(u0);
-ByteAddressBuffer Indices : register(t1, space0);
-StructuredBuffer<Vertex> Vertices : register(t2, space0);
+StructuredBuffer<Vertex> Vertices : register(t1, space0);
+ByteAddressBuffer Indices : register(t2, space0);
 
 ConstantBuffer<SceneConstantBuffer> g_scene : register(b0);
 ConstantBuffer<MeshConstantBuffer> g_mesh : register(b1);
@@ -109,8 +109,8 @@ void MyRaygenShader()
     ray.Direction = rayDir;
     // Set TMin to a non-zero small value to avoid aliasing issues due to floating - point errors.
     // TMin should be kept small to prevent missing geometry at close contact areas.
-    ray.TMin = 0.001;
-    ray.TMax = 10000.0;
+    ray.TMin = 0.01;
+    ray.TMax = 1000.0;
     RayPayload payload = { float4(0, 0, 0, 0) };
     TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, payload);
 
@@ -128,12 +128,13 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     uint baseIndex = PrimitiveIndex() * triangleIndexStride;
 
     // Load up 3 16 bit indices for the triangle.
-    const uint3 indices = Load3x16BitIndices(baseIndex);
+    const uint3 indices = Load3x16BitIndices(g_mesh.index_buffer_offset + baseIndex);
 
+    const uint vertex_offset = g_mesh.vertex_buffer_offset / g_mesh.vertex_stride;
     Vertex vertices[3] = { 
-        Vertices[indices[0]], 
-        Vertices[indices[1]], 
-        Vertices[indices[2]] 
+        Vertices[vertex_offset + indices[0]],
+        Vertices[vertex_offset + indices[1]],
+        Vertices[vertex_offset + indices[2]]
     };
     Vertex vertex = HitVertex(vertices, attr);
 

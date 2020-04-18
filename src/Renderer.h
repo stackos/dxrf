@@ -33,12 +33,9 @@ private:
     void CopyRaytracingOutputToBackbuffer();
     void CreateRootSignatures();
     void SerializeAndCreateRaytracingRootSignature(D3D12_ROOT_SIGNATURE_DESC& desc, ComPtr<ID3D12RootSignature>* sig);
-    void CreateRaytracingInterfaces();
     void CreateRaytracingPipelineStateObject();
     void LoadScene();
-    void BuildGeometry();
     UINT CreateBufferSRV(D3DBuffer* buffer, UINT numElements, UINT elementSize);
-    void BuildAccelerationStructures();
     void CreateConstantBuffers();
     void BuildShaderTables();
 
@@ -62,8 +59,6 @@ private:
     ComPtr<ID3D12RootSignature> m_raytracing_local_sig;
 
     // DirectX Raytracing (DXR) attributes
-    ComPtr<ID3D12Device5> m_dxr_device;
-    ComPtr<ID3D12GraphicsCommandList5> m_dxr_cmd;
     ComPtr<ID3D12StateObject> m_dxr_state;
 
     // Raytracing scene
@@ -71,14 +66,6 @@ private:
     XMVECTOR m_eye = { };
     XMVECTOR m_at = { };
     XMVECTOR m_up = { };
-
-    // Geometry
-    D3DBuffer m_index_buffer;
-    D3DBuffer m_vertex_buffer;
-
-    // Acceleration structure
-    ComPtr<ID3D12Resource> m_bottom_structure;
-    ComPtr<ID3D12Resource> m_top_structure;
 
     // ConstantBuffer
     static_assert(sizeof(SceneConstantBuffer) < D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT, "Checking the size here.");

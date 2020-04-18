@@ -19,7 +19,9 @@ struct SceneConstantBuffer
 struct MeshConstantBuffer
 {
     UINT mesh_index;
-    XMFLOAT3 padding;
+    UINT vertex_buffer_offset;
+    UINT vertex_stride;
+    UINT index_buffer_offset;
     XMFLOAT4 color;
 };
 
@@ -28,13 +30,6 @@ struct Vertex
     XMFLOAT3 position;
     XMFLOAT3 normal;
     XMFLOAT2 uv;
-};
-
-struct RayTraceMeshInfo
-{
-    UINT vertex_buffer_offset;
-    UINT vertex_stride;
-    UINT index_buffer_offset;
 };
 
 #endif

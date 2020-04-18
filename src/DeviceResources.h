@@ -84,6 +84,9 @@ namespace DX
         void ReleaseDescriptor(UINT descriptor_index);
         ID3D12DescriptorHeap* GetDescriptorHeap() { return m_descriptor_heap.Get(); }
 
+        ID3D12Device5* GetDXRDevice() { return m_dxr_device.Get(); }
+        ID3D12GraphicsCommandList5* GetDXRCommandList() { return m_dxr_cmd.Get(); }
+
         void Prepare(D3D12_RESOURCE_STATES beforeState = D3D12_RESOURCE_STATE_PRESENT);
         void Present(D3D12_RESOURCE_STATES beforeState = D3D12_RESOURCE_STATE_RENDER_TARGET);
         void ExecuteCommandList();
@@ -184,6 +187,10 @@ namespace DX
         ComPtr<ID3D12DescriptorHeap> m_descriptor_heap;
         UINT m_descriptor_increment_size = UINT_MAX;
         std::vector<bool> m_descriptors_allocated;
+
+        // DirectX Raytracing (DXR) attributes
+        ComPtr<ID3D12Device5> m_dxr_device;
+        ComPtr<ID3D12GraphicsCommandList5> m_dxr_cmd;
     };
 
     class HrException : public std::runtime_error
