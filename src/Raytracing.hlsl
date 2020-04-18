@@ -51,6 +51,8 @@ typedef BuiltInTriangleIntersectionAttributes MyAttributes;
 struct RayPayload
 {
     float4 color;
+    bool skip_shading;
+    float ray_hit_t;
 };
 
 // Retrieve hit world position.
@@ -107,11 +109,9 @@ void MyRaygenShader()
     RayDesc ray;
     ray.Origin = origin;
     ray.Direction = rayDir;
-    // Set TMin to a non-zero small value to avoid aliasing issues due to floating - point errors.
-    // TMin should be kept small to prevent missing geometry at close contact areas.
     ray.TMin = 0.01;
     ray.TMax = 1000.0;
-    RayPayload payload = { float4(0, 0, 0, 0) };
+    RayPayload payload = { float4(0, 0, 0, 0), false, FLT_MAX };
     TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, payload);
 
     // Write the raytraced color to the output texture.
@@ -121,6 +121,12 @@ void MyRaygenShader()
 [shader("closesthit")]
 void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 {
+    payload.ray_hit_t = RayTCurrent();
+    if (payload.skip_shading)
+    {
+        return;
+    }
+
     // Get the base index of the triangle's first 16 bit index.
     uint indexSizeInBytes = 2;
     uint indicesPerTriangle = 3;
@@ -138,14 +144,51 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     };
     Vertex vertex = HitVertex(vertices, attr);
 
-    float4 color = g_mesh.color * g_texture_local.SampleLevel(g_sampler, vertex.uv, 0);
+    //float4 color = g_texture_local.SampleLevel(g_sampler, vertex.uv, 0);
 
-    payload.color = color;
+    float3 hit_pos = HitWorldPosition();
+    float3 normal = normalize(mul(vertex.normal, ObjectToWorld3x4()).xyz);
+    float3 light_offset = g_scene.light_position.xyz - hit_pos;
+    float3 light_dir = normalize(light_offset);
+    float3 color = max(0.0, dot(normal, light_dir));
+
+    float light_dis = length(light_offset);
+    float light_atten_a = 1.0;
+    float light_atten_b = 1.0;
+    float light_atten_c = 1.0;
+    float light_atten = 1.0 / (light_atten_a * light_dis * light_dis + light_atten_b * light_dis + light_atten_c);
+    float light_intensity = 60.0;
+    color *= light_atten * light_intensity;
+
+    // Trace shadow ray
+    float shadow = 1.0;
+    RayDesc shadow_ray;
+    shadow_ray.Origin = hit_pos;
+    shadow_ray.Direction = light_dir;
+    shadow_ray.TMin = 0.01;
+    shadow_ray.TMax = 1000.0;
+    RayPayload shadow_payload = { float4(0, 0, 0, 0), true, FLT_MAX };
+    TraceRay(Scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, ~0, 0, 1, 0, shadow_ray, shadow_payload);
+    if (shadow_payload.ray_hit_t < FLT_MAX)
+    {
+        shadow = 0.0;
+    }
+    color *= shadow;
+
+    // Tone mapping
+    color = float3(1.0, 1.0, 1.0) - exp(-color);
+
+    payload.color = float4(color, 1.0);
 }
 
 [shader("miss")]
 void MyMissShader(inout RayPayload payload)
 {
+    if (payload.skip_shading)
+    {
+        return;
+    }
+
     float4 background = g_texture_global.SampleLevel(g_sampler, WorldRayDirection(), 0);
     payload.color = background;
 }

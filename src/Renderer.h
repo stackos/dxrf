@@ -35,7 +35,6 @@ private:
     void SerializeAndCreateRaytracingRootSignature(D3D12_ROOT_SIGNATURE_DESC& desc, ComPtr<ID3D12RootSignature>* sig);
     void CreateRaytracingPipelineStateObject();
     void LoadScene();
-    UINT CreateBufferSRV(D3DBuffer* buffer, UINT numElements, UINT elementSize);
     void CreateConstantBuffers();
     void BuildShaderTables();
 

@@ -435,7 +435,7 @@ namespace dxrf
             instance.InstanceID = i;
             instance.InstanceMask = 1;
             instance.AccelerationStructure = m_bottom_structures[m_render_objects[i]->mesh_renderer->mesh_index]->GetGPUVirtualAddress();
-            instance.InstanceContributionToHitGroupIndex = m_render_objects[i]->mesh_renderer->mesh_index;
+            instance.InstanceContributionToHitGroupIndex = i;
             instance.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_TRIANGLE_FRONT_COUNTERCLOCKWISE;
         }
 

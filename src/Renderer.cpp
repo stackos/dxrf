@@ -129,11 +129,13 @@ void Renderer::InitializeScene()
 {
     auto frame_index = m_device->GetCurrentFrameIndex();
 
-    m_eye = { -5.5f, 5.12f, -6.0f, 1.0f };
+    m_eye = { -6.0f, 7.0f, -7.0f, 1.0f };
     m_at = { 0.0f, 0.0f, 0.0f, 1.0f };
     m_up = { 0.0f, 1.0f, 0.0f, 1.0f };
 
     this->UpdateCameraMatrices();
+
+    m_scene_cb[frame_index].light_position = { 0, 4, 3, 0 };
 
     for (auto& cb : m_scene_cb)
     {
@@ -394,7 +396,7 @@ void Renderer::CreateRaytracingPipelineStateObject()
     hit_group->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
 
     auto shader_config = pipeline.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
-    UINT payload_size = sizeof(XMFLOAT4);    // float4 pixelColor
+    UINT payload_size = sizeof(XMFLOAT4) * 2;    // float4 pixelColor
     UINT attribute_size = sizeof(XMFLOAT2);  // float2 barycentrics
     shader_config->Config(payload_size, attribute_size);
 
@@ -410,7 +412,7 @@ void Renderer::CreateRaytracingPipelineStateObject()
     global_sig->SetRootSignature(m_raytracing_global_sig.Get());
 
     auto pipeline_config = pipeline.CreateSubobject<CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT>();
-    UINT max_recursion_depth = 1; // ~ primary rays only. 
+    UINT max_recursion_depth = 2; // primary ray + shadow ray.
     pipeline_config->Config(max_recursion_depth);
 
 #if _DEBUG
@@ -503,21 +505,17 @@ void Renderer::BuildShaderTables()
             MeshConstantBuffer mesh_cb;
             D3D12_GPU_DESCRIPTOR_HANDLE srv;
         };
-        const auto& meshes = m_scene->GetMeshArray();
-        std::vector<RootArguments> arguments(meshes.size());
+        const auto& objects = m_scene->GetRenderObjects();
+        std::vector<RootArguments> arguments(objects.size());
         for (size_t i = 0; i < arguments.size(); ++i)
         {
+            const auto& mesh = objects[i]->mesh_renderer->mesh.lock();
             arguments[i].mesh_cb.mesh_index = (UINT) i;
-            arguments[i].mesh_cb.vertex_buffer_offset = (UINT) meshes[i]->vertex_buffer_offset;
+            arguments[i].mesh_cb.vertex_buffer_offset = (UINT) mesh->vertex_buffer_offset;
             arguments[i].mesh_cb.vertex_stride = sizeof(Vertex);
-            arguments[i].mesh_cb.index_buffer_offset = (UINT) meshes[i]->index_buffer_offset;
-            arguments[i].mesh_cb.color = { 1, 1, 1, 1 };
+            arguments[i].mesh_cb.index_buffer_offset = (UINT) mesh->index_buffer_offset;
             arguments[i].srv = m_texture_mesh->GetGpuHandle();
         }
-        arguments[1].mesh_cb.color = { 1, 0, 0, 1 };
-        arguments[2].mesh_cb.color = { 0, 1, 0, 1 };
-        arguments[3].mesh_cb.color = { 0, 0, 1, 1 };
-        arguments[4].mesh_cb.color = { 1, 1, 0, 1 };
 
         UINT record_count = (UINT) arguments.size();
         UINT record_size = shader_id_size + sizeof(RootArguments);

@@ -3,6 +3,10 @@
 
 #ifdef HLSL
 #include "HlslCompat.h"
+
+#ifndef SINGLE
+static const float FLT_MAX = asfloat(0x7F7FFFFF);
+#endif
 #else
 using namespace DirectX;
 
@@ -14,6 +18,7 @@ struct SceneConstantBuffer
 {
     XMMATRIX projection_to_world;
     XMVECTOR camera_position;
+    XMVECTOR light_position;
 };
 
 struct MeshConstantBuffer
@@ -22,7 +27,6 @@ struct MeshConstantBuffer
     UINT vertex_buffer_offset;
     UINT vertex_stride;
     UINT index_buffer_offset;
-    XMFLOAT4 color;
 };
 
 struct Vertex
