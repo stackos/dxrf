@@ -118,14 +118,14 @@ void MyRaygenShader()
     RenderTarget[DispatchRaysIndex().xy] = payload.color;
 }
 
-float3 ShadeSphereLight(float3 color)
+float3 ShadeSphereLight(float3 color, float hit_t)
 {
     float3 light_pos = g_scene.light_position.xyz;
     float3 ray_ori = WorldRayOrigin();
     float3 ray_dir = WorldRayDirection();
 
     float t = dot(light_pos - ray_ori, ray_dir);
-    if (t > 0)
+    if (t > 0 && t < hit_t)
     {
         float dis = length(ray_ori + ray_dir * t - light_pos);
         if (dis <= 1.0)
@@ -203,7 +203,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     // Tone mapping
     color = float3(1.0, 1.0, 1.0) - exp(-color);
 
-    color = ShadeSphereLight(color);
+    color = ShadeSphereLight(color, RayTCurrent());
 
     payload.color = float4(color, 1.0);
 }
@@ -218,7 +218,7 @@ void MyMissShader(inout RayPayload payload)
 
     float3 color = g_texture_global.SampleLevel(g_sampler, WorldRayDirection(), 0).rgb;
 
-    color = ShadeSphereLight(color);
+    color = ShadeSphereLight(color, FLT_MAX);
 
     payload.color = float4(color, 1.0);
 }
