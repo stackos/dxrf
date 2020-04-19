@@ -136,7 +136,7 @@ float3 ShadeSphereLight(float3 color, float hit_t)
         else if (dis <= 1.2)
         {
             t = 1.0 - (dis - 1.0) / 0.2;
-            color = lerp(color, float3(1.0, 1.0, 1.0), t * t);
+            color += float3(1.0, 1.0, 1.0) * t * t;
         }
     }
 
