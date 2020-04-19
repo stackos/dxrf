@@ -438,6 +438,7 @@ namespace dxrf
             instance.InstanceContributionToHitGroupIndex = i;
             instance.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_TRIANGLE_FRONT_COUNTERCLOCKWISE;
         }
+        instance_descs[6].InstanceMask = 2;
 
         ComPtr<ID3D12Resource> instance_desc_buffer;
         AllocateUploadBuffer(d3d, &instance_descs[0], sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * instance_descs.size(), &instance_desc_buffer);

@@ -7,6 +7,7 @@
 #ifndef SINGLE
 static const float FLT_MAX = asfloat(0x7F7FFFFF);
 #endif
+static const uint UINT_NAX = 0xFFFFFFFF;
 #else
 using namespace DirectX;
 

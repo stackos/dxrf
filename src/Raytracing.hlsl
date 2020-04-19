@@ -53,6 +53,7 @@ struct RayPayload
     float4 color;
     bool skip_shading;
     float ray_hit_t;
+    uint hit_instance_id;
 };
 
 // Retrieve hit world position.
@@ -111,8 +112,8 @@ void MyRaygenShader()
     ray.Direction = rayDir;
     ray.TMin = 0.01;
     ray.TMax = 1000.0;
-    RayPayload payload = { float4(0, 0, 0, 0), false, FLT_MAX };
-    TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, payload);
+    RayPayload payload = { float4(0, 0, 0, 0), false, FLT_MAX, UINT_NAX };
+    TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, 1, 0, 1, 0, ray, payload);
 
     // Write the raytraced color to the output texture.
     RenderTarget[DispatchRaysIndex().xy] = payload.color;
@@ -146,6 +147,7 @@ float3 ShadeSphereLight(float3 color, float hit_t)
 void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 {
     payload.ray_hit_t = RayTCurrent();
+    payload.hit_instance_id = InstanceID();
     if (payload.skip_shading)
     {
         return;
@@ -185,20 +187,33 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     float light_intensity = 60.0;
     color *= light_atten * light_intensity;
 
-    // Trace shadow ray
-    float shadow = 1.0;
-    RayDesc shadow_ray;
-    shadow_ray.Origin = hit_pos;
-    shadow_ray.Direction = light_dir;
-    shadow_ray.TMin = 0.01;
-    shadow_ray.TMax = 1000.0;
-    RayPayload shadow_payload = { float4(0, 0, 0, 0), true, FLT_MAX };
-    TraceRay(Scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, ~0, 0, 1, 0, shadow_ray, shadow_payload);
-    if (shadow_payload.ray_hit_t < FLT_MAX)
+    float shadow_sum = 0.0;
+    const int shadow_ray_count = 1;
+    // Trace rays from hit point to light
+    for (int i = 0; i < shadow_ray_count; ++i)
     {
-        shadow = 0.0;
+        RayDesc shadow_ray;
+        shadow_ray.Origin = hit_pos;
+        shadow_ray.Direction = light_dir;
+        shadow_ray.TMin = 0.01;
+        shadow_ray.TMax = 1000.0;
+        RayPayload shadow_payload = { float4(0, 0, 0, 0), true, FLT_MAX, UINT_NAX };
+        TraceRay(Scene, 0, ~0, 0, 1, 0, shadow_ray, shadow_payload);
+        float shadow = 1.0;
+        if (shadow_payload.ray_hit_t < FLT_MAX)
+        {
+            if (shadow_payload.hit_instance_id < 6)
+            {
+                shadow = 0.0;
+            }
+            else if (shadow_payload.hit_instance_id == 6) // light
+            {
+
+            }
+        }
+        shadow_sum += shadow;
     }
-    color *= shadow;
+    color *= shadow_sum / shadow_ray_count;
 
     // Tone mapping
     color = float3(1.0, 1.0, 1.0) - exp(-color);
